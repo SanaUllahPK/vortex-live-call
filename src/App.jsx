@@ -4,12 +4,15 @@ const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
 export default function LiveCallUI() {
   const [callActive, setCallActive] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
-  const [theirWords, setTheirWords] = useState('');
+  const [conversationHistory, setConversationHistory] = useState([]);
   const [suggestedResponse, setSuggestedResponse] = useState('');
-  const [mediaRecorderRef, setMediaRecorderRef] = useState(null);
-  const [audioChunksRef, setAudioChunksRef] = useState([]);
-  const [streamRef, setStreamRef] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     let interval;
@@ -42,10 +45,15 @@ export default function LiveCallUI() {
 
       const result = await response.json();
       if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
-        const newTranscript = result.results.channels[0].alternatives[0].transcript;
-        if (newTranscript) {
-          setTheirWords(newTranscript);
-          generateResponse(newTranscript);
+        const supplierWords = result.results.channels[0].alternatives[0].transcript;
+        if (supplierWords) {
+          generateResponse(supplierWords);
+          // Add to history
+          setConversationHistory(prev => [...prev, {
+            speaker: 'supplier',
+            text: supplierWords,
+            timestamp: new Date().toLocaleTimeString()
+          }]);
         }
       }
     } catch (err) {
@@ -53,13 +61,14 @@ export default function LiveCallUI() {
     }
   };
 
-  const generateResponse = async (transcript) => {
+  const generateResponse = async (text) => {
+    setIsGenerating(true);
     try {
       const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: transcript,
+          transcript: text,
           missionType: 'Discovery'
         })
       });
@@ -70,66 +79,77 @@ export default function LiveCallUI() {
       }
     } catch (err) {
       console.error('Claude response error:', err);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const handleStartCall = async () => {
+  const startListening = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setStreamRef(stream);
+      streamRef.current = stream;
       
       const mediaRecorder = new MediaRecorder(stream);
-      setMediaRecorderRef(mediaRecorder);
-      const audioChunks = [];
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
+        audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         await sendToDeepgram(audioBlob);
-        audioChunks.length = 0;
+        audioChunksRef.current = [];
       };
 
       mediaRecorder.start();
-      
-      setCallActive(true);
-      setCallDuration(0);
-      setTheirWords('');
-      setSuggestedResponse('');
-
-      // Send audio every 3 seconds
-      const interval = setInterval(() => {
-        if (mediaRecorder.state === 'recording') {
-          mediaRecorder.stop();
-          mediaRecorder.start();
-        }
-      }, 3000);
-
-      return () => clearInterval(interval);
+      setIsListening(true);
     } catch (err) {
       console.error('Microphone access error:', err);
       alert('Please allow microphone access');
     }
   };
 
-  const handleEndCall = () => {
-    if (mediaRecorderRef && mediaRecorderRef.state === 'recording') {
-      mediaRecorderRef.stop();
+  const stopListening = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
     }
-    if (streamRef) {
-      streamRef.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    setIsListening(false);
+  };
+
+  const addMyResponse = () => {
+    if (suggestedResponse) {
+      setConversationHistory(prev => [...prev, {
+        speaker: 'you',
+        text: suggestedResponse,
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+      setSuggestedResponse('');
+    }
+  };
+
+  const endCall = () => {
+    if (isListening) {
+      stopListening();
     }
     setCallActive(false);
   };
 
-  const handleTheirWordsChange = (e) => {
-    const text = e.target.value;
-    setTheirWords(text);
-    if (text.trim()) {
-      generateResponse(text);
-    }
+  const saveCall = () => {
+    const transcript = conversationHistory.map(item => 
+      `[${item.timestamp}] ${item.speaker === 'supplier' ? 'SUPPLIER' : 'YOU'}: ${item.text}`
+    ).join('\n\n');
+
+    const blob = new Blob([transcript], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ABC-Brands-Call-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
   };
 
   const styles = {
@@ -219,51 +239,56 @@ export default function LiveCallUI() {
       fontSize: '14px',
       lineHeight: '1.6',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
+      flexDirection: 'column',
+      gap: '12px'
     },
-    dialogInput: {
-      flex: 1,
-      overflow: 'auto',
+    conversationItem: {
+      padding: '12px',
+      borderRadius: '6px',
+      fontSize: '13px',
+      lineHeight: '1.5'
+    },
+    supplierMessage: {
+      background: 'rgba(248, 113, 113, 0.1)',
+      borderLeft: '3px solid #f87171',
+      color: '#fca5a5'
+    },
+    yourMessage: {
+      background: 'rgba(16, 185, 129, 0.1)',
+      borderLeft: '3px solid #10b981',
+      color: '#a7f3d0'
+    },
+    currentResponse: {
+      background: 'rgba(59, 130, 246, 0.1)',
+      borderLeft: '3px solid #3b82f6',
       padding: '16px',
-      fontSize: '14px',
-      lineHeight: '1.6',
-      background: 'transparent',
-      border: 'none',
-      color: '#cbd5e1',
-      resize: 'none',
-      fontFamily: 'monospace'
-    },
-    dialogText: {
-      color: '#cbd5e1',
-      textAlign: 'left'
-    },
-    theyLabel: {
-      color: '#f87171'
-    },
-    youLabel: {
-      color: '#10b981'
+      minHeight: '80px'
     },
     buttonGroup: {
       display: 'flex',
-      gap: '16px',
-      justifyContent: 'center'
+      gap: '12px',
+      justifyContent: 'center',
+      flexWrap: 'wrap'
     },
     button: {
-      padding: '12px 24px',
-      borderRadius: '8px',
+      padding: '10px 20px',
+      borderRadius: '6px',
       border: 'none',
       fontWeight: '600',
       cursor: 'pointer',
-      fontSize: '16px',
+      fontSize: '14px',
       transition: 'all 0.2s'
     },
-    buttonStart: {
+    buttonPrimary: {
       background: '#10b981',
       color: '#fff'
     },
-    buttonEnd: {
+    buttonDanger: {
       background: '#ef4444',
+      color: '#fff'
+    },
+    buttonWarning: {
+      background: '#f59e0b',
       color: '#fff'
     },
     buttonSecondary: {
@@ -340,56 +365,102 @@ export default function LiveCallUI() {
 
         <div style={styles.rightPanel}>
           <div style={styles.dialogContainer}>
-            {/* THEY SAID */}
+            {/* CONVERSATION HISTORY */}
             <div style={styles.dialogBox}>
-              <div style={{...styles.dialogLabel, ...styles.theyLabel}}>🗣️ They Said</div>
-              {callActive ? (
-                <textarea
-                  value={theirWords}
-                  onChange={handleTheirWordsChange}
-                  placeholder="Listening... or type what they said..."
-                  style={{...styles.dialogInput, color: '#cbd5e1'}}
-                />
-              ) : (
-                <div style={styles.dialogContent}>
-                  {theirWords ? (
-                    <div style={styles.dialogText}>{theirWords}</div>
-                  ) : (
-                    <div style={{ color: '#64748b' }}>Ready to listen...</div>
-                  )}
-                </div>
-              )}
+              <div style={{...styles.dialogLabel}}>📋 Conversation History</div>
+              <div style={styles.dialogContent}>
+                {conversationHistory.length === 0 ? (
+                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
+                    Start call and listen to supplier to begin
+                  </div>
+                ) : (
+                  conversationHistory.map((item, idx) => (
+                    <div key={idx} style={{...styles.conversationItem, ...(item.speaker === 'supplier' ? styles.supplierMessage : styles.yourMessage)}}>
+                      <strong>{item.speaker === 'supplier' ? '🗣️ SUPPLIER' : '💬 YOU'}:</strong> {item.text}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
-            {/* YOU SHOULD SAY */}
+            {/* CLAUDE'S SUGGESTION */}
             <div style={styles.dialogBox}>
-              <div style={{...styles.dialogLabel, ...styles.youLabel}}>💬 You Should Say</div>
-              <div style={{...styles.dialogContent, alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: '16px'}}>
-                {suggestedResponse ? (
-                  <div style={styles.dialogText}>{suggestedResponse}</div>
+              <div style={{...styles.dialogLabel, color: '#3b82f6'}}>✨ Claude Suggested Response</div>
+              <div style={styles.dialogContent}>
+                {isGenerating ? (
+                  <div style={{ color: '#64748b' }}>Generating response...</div>
+                ) : suggestedResponse ? (
+                  <div style={styles.currentResponse}>
+                    {suggestedResponse}
+                  </div>
                 ) : (
-                  <div style={{ color: '#64748b' }}>Claude will suggest responses here...</div>
+                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
+                    Listen to supplier response to get Claude's suggestion
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
           <div style={styles.buttonGroup}>
-            <button
-              onClick={callActive ? handleEndCall : handleStartCall}
-              style={{...styles.button, ...(callActive ? styles.buttonEnd : styles.buttonStart)}}
-            >
-              {callActive ? '📞 End Call' : '🎤 Record Supplier'}
-            </button>
-            <button style={{...styles.button, ...styles.buttonSecondary}}>
-              💾 Save Call
-            </button>
+            {!callActive ? (
+              <button
+                onClick={() => {
+                  setCallActive(true);
+                  setCallDuration(0);
+                  setConversationHistory([]);
+                }}
+                style={{...styles.button, ...styles.buttonPrimary}}
+              >
+                📞 Start Call
+              </button>
+            ) : (
+              <>
+                {isListening ? (
+                  <button
+                    onClick={stopListening}
+                    style={{...styles.button, ...styles.buttonWarning}}
+                  >
+                    ⏹️ Stop Listening
+                  </button>
+                ) : (
+                  <button
+                    onClick={startListening}
+                    style={{...styles.button, ...styles.buttonDanger}}
+                  >
+                    🎤 Listen to Supplier
+                  </button>
+                )}
+                {suggestedResponse && (
+                  <button
+                    onClick={addMyResponse}
+                    style={{...styles.button, ...styles.buttonPrimary}}
+                  >
+                    ✅ Add My Response
+                  </button>
+                )}
+                <button
+                  onClick={endCall}
+                  style={{...styles.button, ...styles.buttonDanger}}
+                >
+                  📞 End Call
+                </button>
+              </>
+            )}
+            {conversationHistory.length > 0 && (
+              <button
+                onClick={saveCall}
+                style={{...styles.button, ...styles.buttonSecondary}}
+              >
+                💾 Save Call
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       <div style={styles.footer}>
-        <span>Two-way dialogue powered by Deepgram + Claude</span>
+        <span>Full conversation transcript saved on download</span>
         <span>Ready for production</span>
       </div>
     </div>
