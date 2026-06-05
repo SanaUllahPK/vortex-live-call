@@ -20,13 +20,60 @@ const CALL_TYPES = {
   },
   distributor_inquiry: {
     label: '🚚 Distributor Inquiry',
-    description: 'Distributor network opportunity',
+    description: 'You\'re buying from them',
     color: '#8b5cf6'
+  }
+};
+
+const DISCOVERY_CHECKLISTS = {
+  distributor_inquiry: {
+    title: 'DISCOVERY CHECKLIST',
+    items: [
+      { id: 'decision_maker', label: 'Decision maker confirmed' },
+      { id: 'accounts_open', label: 'Do they accept new accounts?' },
+      { id: 'moq', label: 'MOQ discovered' },
+      { id: 'reseller_cert', label: 'Reseller certificate required?' },
+      { id: 'approval_process', label: 'Approval process discovered' },
+      { id: 'approval_timeline', label: 'Timeline discovered' },
+      { id: 'brands_carried', label: 'Brands/categories discovered' },
+      { id: 'documents', label: 'Documents required discovered' },
+      { id: 'next_step', label: 'Next step secured' }
+    ]
   },
-  wholesale_partnership: {
-    label: '🤝 Wholesale Partnership',
-    description: 'Direct wholesale opportunity',
-    color: '#10b981'
+  quick_note: {
+    title: 'DISCOVERY CHECKLIST',
+    items: [
+      { id: 'decision_maker', label: 'Decision maker identified' },
+      { id: 'wholesale_open', label: 'Do they accept wholesale?' },
+      { id: 'approval_process', label: 'Approval process learned' },
+      { id: 'requirements', label: 'Requirements discovered' },
+      { id: 'moq', label: 'Volume expectations learned' },
+      { id: 'next_step', label: 'Next step secured' }
+    ]
+  },
+  brand_registry: {
+    title: 'DISCOVERY CHECKLIST',
+    items: [
+      { id: 'aware_issue', label: 'They\'re aware of Amazon challenges' },
+      { id: 'decision_maker', label: 'Decision maker identified' },
+      { id: 'current_situation', label: 'Current Amazon situation understood' },
+      { id: 'brand_registry', label: 'Brand Registry status learned' },
+      { id: 'unauthorized_sellers', label: 'Unauthorized seller concern raised' },
+      { id: 'interest_level', label: 'Interest level assessed' },
+      { id: 'next_step', label: 'Next step secured' }
+    ]
+  },
+  retail_inquiry: {
+    title: 'DISCOVERY CHECKLIST',
+    items: [
+      { id: 'decision_maker', label: 'Decision maker identified' },
+      { id: 'current_channels', label: 'Current distribution understood' },
+      { id: 'wholesale_willing', label: 'Open to wholesale partners?' },
+      { id: 'requirements', label: 'Partner requirements learned' },
+      { id: 'ideal_partner', label: 'Ideal partner profile learned' },
+      { id: 'approval_process', label: 'Approval process discovered' },
+      { id: 'next_step', label: 'Next step secured' }
+    ]
   }
 };
 
@@ -39,8 +86,9 @@ export default function LiveCallUI() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [briefInput, setBriefInput] = useState('');
   const [briefText, setBriefText] = useState('');
-  const [callType, setCallType] = useState('wholesale_partnership');
+  const [callType, setCallType] = useState('distributor_inquiry');
   const [callTypeSelected, setCallTypeSelected] = useState('');
+  const [checkedItems, setCheckedItems] = useState({});
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -173,6 +221,7 @@ export default function LiveCallUI() {
     setCallActive(true);
     setCallDuration(0);
     setConversationHistory([]);
+    setCheckedItems({});
   };
 
   const endCall = () => {
@@ -182,15 +231,25 @@ export default function LiveCallUI() {
     setCallActive(false);
   };
 
+  const toggleCheckbox = (itemId) => {
+    setCheckedItems(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
+
   const saveCall = () => {
     const transcript = conversationHistory.map(item => 
-      `[${item.timestamp}] ${item.speaker === 'supplier' ? 'SUPPLIER' : 'YOU'}: ${item.text}`
+      `[${item.timestamp}] ${item.speaker === 'supplier' ? 'CONTACT' : 'YOU'}: ${item.text}`
     ).join('\n\n');
 
     const fullText = `CALL TYPE: ${CALL_TYPES[callTypeSelected]?.label || 'Unknown'}
 
-DISCOVERY BRIEF:
+BRIEF:
 ${briefText}
+
+DISCOVERY CHECKLIST:
+${Object.entries(checkedItems).map(([k, v]) => v ? '✓' : '○').join('')}
 
 ---
 
@@ -223,18 +282,6 @@ ${transcript}`;
       justifyContent: 'space-between',
       alignItems: 'center'
     },
-    headerTitle: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px'
-    },
-    pulse: {
-      width: '12px',
-      height: '12px',
-      background: '#10b981',
-      borderRadius: '50%',
-      animation: 'pulse 2s infinite'
-    },
     mainContent: {
       flex: 1,
       display: 'flex',
@@ -243,7 +290,7 @@ ${transcript}`;
       overflow: 'hidden'
     },
     leftPanel: {
-      width: '320px',
+      width: '340px',
       display: 'flex',
       flexDirection: 'column',
       gap: '16px',
@@ -264,8 +311,8 @@ ${transcript}`;
     },
     dialogContainer: {
       flex: 1,
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
+      display: 'flex',
+      flexDirection: 'column',
       gap: '16px',
       overflow: 'hidden'
     },
@@ -275,7 +322,8 @@ ${transcript}`;
       borderRadius: '8px',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      flex: 1
     },
     dialogLabel: {
       fontSize: '12px',
@@ -296,70 +344,31 @@ ${transcript}`;
       flexDirection: 'column',
       gap: '12px'
     },
-    conversationItem: {
-      padding: '12px',
-      borderRadius: '6px',
-      fontSize: '13px',
-      lineHeight: '1.5'
-    },
-    supplierMessage: {
-      background: 'rgba(248, 113, 113, 0.1)',
-      borderLeft: '3px solid #f87171',
-      color: '#fca5a5'
-    },
-    yourMessage: {
-      background: 'rgba(16, 185, 129, 0.1)',
-      borderLeft: '3px solid #10b981',
-      color: '#a7f3d0'
-    },
-    currentResponse: {
-      background: 'rgba(59, 130, 246, 0.1)',
-      borderLeft: '3px solid #3b82f6',
-      padding: '16px',
-      minHeight: '80px'
-    },
-    callTypeSelector: {
+    checklistItem: {
       display: 'flex',
-      flexDirection: 'column',
-      gap: '12px'
-    },
-    callTypeLabel: {
-      fontSize: '12px',
-      fontWeight: '600',
-      color: '#94a3b8',
-      textTransform: 'uppercase'
-    },
-    callTypeGrid: {
-      display: 'grid',
-      gridTemplateColumns: '1fr',
-      gap: '8px'
-    },
-    callTypeOption: {
-      padding: '12px',
-      background: 'rgba(15, 23, 42, 0.5)',
-      border: '2px solid rgba(51, 65, 85, 0.5)',
-      borderRadius: '6px',
-      cursor: 'pointer',
-      transition: 'all 0.2s',
-      color: '#cbd5e1',
-      textAlign: 'left'
-    },
-    callTypeOptionActive: {
-      borderColor: '#10b981',
-      background: 'rgba(16, 185, 129, 0.1)'
-    },
-    briefInput: {
-      width: '100%',
-      padding: '12px',
-      background: 'rgba(15, 23, 42, 0.5)',
-      border: '1px solid rgba(51, 65, 85, 0.5)',
-      borderRadius: '6px',
-      color: '#cbd5e1',
+      alignItems: 'center',
+      gap: '10px',
+      padding: '8px',
       fontSize: '13px',
-      lineHeight: '1.5',
-      fontFamily: 'system-ui',
-      resize: 'none',
-      height: '100px'
+      color: '#cbd5e1',
+      cursor: 'pointer',
+      borderRadius: '4px',
+      transition: 'background 0.2s'
+    },
+    checkbox: {
+      width: '18px',
+      height: '18px',
+      borderRadius: '4px',
+      border: '2px solid rgba(51, 65, 85, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      transition: 'all 0.2s'
+    },
+    checkboxChecked: {
+      background: '#10b981',
+      borderColor: '#10b981'
     },
     buttonGroup: {
       display: 'flex',
@@ -384,24 +393,16 @@ ${transcript}`;
       background: '#ef4444',
       color: '#fff'
     },
-    buttonWarning: {
-      background: '#f59e0b',
-      color: '#fff'
-    },
-    buttonSecondary: {
-      background: '#475569',
-      color: '#e2e8f0'
-    },
     footer: {
       background: 'rgba(15, 23, 42, 0.5)',
       borderTop: '1px solid rgba(51, 65, 85, 0.5)',
       padding: '8px 24px',
       fontSize: '12px',
-      color: '#94a3b8',
-      display: 'flex',
-      justifyContent: 'space-between'
+      color: '#94a3b8'
     }
   };
+
+  const checklist = DISCOVERY_CHECKLISTS[callTypeSelected] || DISCOVERY_CHECKLISTS.distributor_inquiry;
 
   return (
     <div style={styles.container}>
@@ -413,10 +414,7 @@ ${transcript}`;
       `}</style>
 
       <div style={styles.header}>
-        <div style={styles.headerTitle}>
-          <div style={styles.pulse}></div>
-          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>Live Call System</h1>
-        </div>
+        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>Live Call System</h1>
         <div style={{ color: '#cbd5e1' }}>
           {callActive && <span style={{ fontFamily: 'monospace', color: '#10b981', marginRight: '16px' }}>{formatTime(callDuration)}</span>}
           {callActive && CALL_TYPES[callTypeSelected]?.label}
@@ -425,70 +423,81 @@ ${transcript}`;
 
       <div style={styles.mainContent}>
         <div style={styles.leftPanel}>
-          <div style={styles.card}>
-            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>Supplier</p>
-            <p style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: '600' }}>ABC Brands</p>
-            <div>
-              <div style={{ marginBottom: '12px' }}>
-                <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#94a3b8' }}>Contact</p>
-                <p style={{ margin: 0, fontSize: '14px' }}>John Smith</p>
-              </div>
-              <div>
-                <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#94a3b8' }}>Stage</p>
-                <p style={{ margin: 0, fontSize: '14px' }}>Contact</p>
-              </div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>Trust</p>
-              <div style={{ flex: 1, height: '8px', background: '#334155', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', background: '#06b6d4', width: '50%' }}></div>
-              </div>
-              <span style={{ fontSize: '12px', color: '#06b6d4', fontWeight: '600' }}>5/10</span>
-            </div>
-          </div>
-
           {!callActive && (
             <>
               <div style={styles.card}>
-                <p style={styles.callTypeLabel}>Call Type</p>
-                <div style={styles.callTypeGrid}>
+                <p style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Call Type</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
                   {Object.entries(CALL_TYPES).map(([key, value]) => (
                     <button
                       key={key}
                       onClick={() => setCallType(key)}
                       style={{
-                        ...styles.callTypeOption,
-                        ...(callType === key ? styles.callTypeOptionActive : {})
+                        padding: '12px',
+                        background: callType === key ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.5)',
+                        border: callType === key ? '2px solid #10b981' : '1px solid rgba(51, 65, 85, 0.5)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        color: '#cbd5e1',
+                        textAlign: 'left',
+                        transition: 'all 0.2s'
                       }}
                     >
                       <div style={{ fontWeight: '600', fontSize: '13px' }}>{value.label}</div>
-                      <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{value.description}</div>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>{value.description}</div>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Discovery Brief</p>
-                <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>What's the focus of this call?</p>
+              <div style={{ ...styles.card, flex: 1 }}>
+                <p style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Brief</p>
                 <textarea
                   value={briefInput}
                   onChange={(e) => setBriefInput(e.target.value)}
-                  placeholder="E.g., Understand their distribution model, learn about wholesale interest, identify decision makers..."
-                  style={styles.briefInput}
+                  placeholder="What's the focus of this call?"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: 'rgba(15, 23, 42, 0.5)',
+                    border: '1px solid rgba(51, 65, 85, 0.5)',
+                    borderRadius: '6px',
+                    color: '#cbd5e1',
+                    fontSize: '13px',
+                    fontFamily: 'system-ui',
+                    resize: 'none',
+                    height: '100px'
+                  }}
                 />
               </div>
             </>
           )}
 
           {callActive && (
-            <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Call Type</p>
-              <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '600', color: CALL_TYPES[callTypeSelected]?.color }}>
-                {CALL_TYPES[callTypeSelected]?.label}
+            <div style={styles.card}>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 12px 0' }}>
+                {checklist.title}
               </p>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>Brief:</p>
-              <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1', lineHeight: '1.5' }}>{briefText}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {checklist.items.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => toggleCheckbox(item.id)}
+                    style={{
+                      ...styles.checklistItem,
+                      background: checkedItems[item.id] ? 'rgba(16, 185, 129, 0.1)' : 'transparent'
+                    }}
+                  >
+                    <div style={{
+                      ...styles.checkbox,
+                      ...(checkedItems[item.id] ? styles.checkboxChecked : {})
+                    }}>
+                      {checkedItems[item.id] && '✓'}
+                    </div>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -496,16 +505,22 @@ ${transcript}`;
         <div style={styles.rightPanel}>
           <div style={styles.dialogContainer}>
             <div style={styles.dialogBox}>
-              <div style={{...styles.dialogLabel}}>📋 Conversation History</div>
+              <div style={styles.dialogLabel}>📞 Conversation</div>
               <div style={styles.dialogContent}>
                 {conversationHistory.length === 0 ? (
-                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
-                    Start call to begin
-                  </div>
+                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>Start call to begin</div>
                 ) : (
                   conversationHistory.map((item, idx) => (
-                    <div key={idx} style={{...styles.conversationItem, ...(item.speaker === 'supplier' ? styles.supplierMessage : styles.yourMessage)}}>
-                      <strong>{item.speaker === 'supplier' ? '🗣️ SUPPLIER' : '💬 YOU'}:</strong> {item.text}
+                    <div key={idx} style={{
+                      padding: '12px',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      background: item.speaker === 'supplier' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                      borderLeft: item.speaker === 'supplier' ? '3px solid #f87171' : '3px solid #10b981',
+                      color: item.speaker === 'supplier' ? '#fca5a5' : '#a7f3d0'
+                    }}>
+                      <strong>{item.speaker === 'supplier' ? '🗣️ CONTACT' : '💬 YOU'}:</strong> {item.text}
                     </div>
                   ))
                 )}
@@ -513,18 +528,16 @@ ${transcript}`;
             </div>
 
             <div style={styles.dialogBox}>
-              <div style={{...styles.dialogLabel, color: '#3b82f6'}}>✨ Claude Suggested Response</div>
+              <div style={{...styles.dialogLabel, color: '#3b82f6'}}>✨ Coaching</div>
               <div style={styles.dialogContent}>
                 {isGenerating ? (
-                  <div style={{ color: '#64748b' }}>Generating...</div>
+                  <div style={{ color: '#64748b' }}>Analyzing...</div>
                 ) : suggestedResponse ? (
-                  <div style={styles.currentResponse}>
+                  <div style={{ fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#cbd5e1' }}>
                     {suggestedResponse}
                   </div>
                 ) : (
-                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
-                    Listen to supplier
-                  </div>
+                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>Listen to contact</div>
                 )}
               </div>
             </div>
@@ -549,7 +562,7 @@ ${transcript}`;
                 {isListening ? (
                   <button
                     onClick={stopListening}
-                    style={{...styles.button, ...styles.buttonWarning}}
+                    style={{...styles.button, background: '#f59e0b', color: '#fff'}}
                   >
                     ⏹️ Stop Listening
                   </button>
@@ -558,7 +571,7 @@ ${transcript}`;
                     onClick={startListening}
                     style={{...styles.button, ...styles.buttonDanger}}
                   >
-                    🎤 Listen to Supplier
+                    🎤 Listen
                   </button>
                 )}
                 {suggestedResponse && (
@@ -566,7 +579,7 @@ ${transcript}`;
                     onClick={addMyResponse}
                     style={{...styles.button, ...styles.buttonPrimary}}
                   >
-                    ✅ Add My Response
+                    ✅ Add Response
                   </button>
                 )}
                 <button
@@ -580,7 +593,7 @@ ${transcript}`;
             {conversationHistory.length > 0 && (
               <button
                 onClick={saveCall}
-                style={{...styles.button, ...styles.buttonSecondary}}
+                style={{...styles.button, background: '#475569', color: '#e2e8f0'}}
               >
                 💾 Save Call
               </button>
@@ -590,8 +603,7 @@ ${transcript}`;
       </div>
 
       <div style={styles.footer}>
-        <span>Call type guides coaching strategy</span>
-        <span>Discovery-focused approach</span>
+        <span>Discovery-focused coaching system</span>
       </div>
     </div>
   );
