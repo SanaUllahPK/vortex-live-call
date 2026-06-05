@@ -47,13 +47,15 @@ export default function LiveCallUI() {
       if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
         const supplierWords = result.results.channels[0].alternatives[0].transcript;
         if (supplierWords) {
-          generateResponse(supplierWords);
-          // Add to history
-          setConversationHistory(prev => [...prev, {
+          // Add to history FIRST
+          const updatedHistory = [...conversationHistory, {
             speaker: 'supplier',
             text: supplierWords,
             timestamp: new Date().toLocaleTimeString()
-          }]);
+          }];
+          setConversationHistory(updatedHistory);
+          // Then generate response with full context
+          generateResponse(supplierWords, updatedHistory);
         }
       }
     } catch (err) {
@@ -61,7 +63,7 @@ export default function LiveCallUI() {
     }
   };
 
-  const generateResponse = async (text) => {
+  const generateResponse = async (text, history) => {
     setIsGenerating(true);
     try {
       const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
@@ -69,7 +71,8 @@ export default function LiveCallUI() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: text,
-          missionType: 'Discovery'
+          missionType: 'Discovery',
+          conversationHistory: history
         })
       });
       
@@ -365,13 +368,12 @@ export default function LiveCallUI() {
 
         <div style={styles.rightPanel}>
           <div style={styles.dialogContainer}>
-            {/* CONVERSATION HISTORY */}
             <div style={styles.dialogBox}>
               <div style={{...styles.dialogLabel}}>📋 Conversation History</div>
               <div style={styles.dialogContent}>
                 {conversationHistory.length === 0 ? (
                   <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
-                    Start call and listen to supplier to begin
+                    Start call to begin
                   </div>
                 ) : (
                   conversationHistory.map((item, idx) => (
@@ -383,19 +385,18 @@ export default function LiveCallUI() {
               </div>
             </div>
 
-            {/* CLAUDE'S SUGGESTION */}
             <div style={styles.dialogBox}>
               <div style={{...styles.dialogLabel, color: '#3b82f6'}}>✨ Claude Suggested Response</div>
               <div style={styles.dialogContent}>
                 {isGenerating ? (
-                  <div style={{ color: '#64748b' }}>Generating response...</div>
+                  <div style={{ color: '#64748b' }}>Generating...</div>
                 ) : suggestedResponse ? (
                   <div style={styles.currentResponse}>
                     {suggestedResponse}
                   </div>
                 ) : (
                   <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
-                    Listen to supplier response to get Claude's suggestion
+                    Listen to supplier for suggestion
                   </div>
                 )}
               </div>
@@ -461,7 +462,7 @@ export default function LiveCallUI() {
 
       <div style={styles.footer}>
         <span>Full conversation transcript saved on download</span>
-        <span>Ready for production</span>
+        <span>Context-aware responses</span>
       </div>
     </div>
   );
