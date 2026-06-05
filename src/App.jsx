@@ -53,7 +53,7 @@ export default function LiveCallUI() {
       'They seem engaged. Keep momentum.',
       'Good opening. Now listen more.',
       'Ask about their growth plans.',
-      'You\'re building rapport well. Stay in discovery mode.',
+      'You\'re building rapport well.',
     ];
     let index = 0;
     const interval = setInterval(() => {
@@ -65,99 +65,212 @@ export default function LiveCallUI() {
     return () => clearInterval(interval);
   }, [callActive]);
 
+  const styles = {
+    container: {
+      height: '100vh',
+      background: 'linear-gradient(to bottom right, #0f172a, #0f1419, #0f172a)',
+      color: '#fff',
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: 'system-ui, -apple-system, sans-serif'
+    },
+    header: {
+      background: 'rgba(15, 23, 42, 0.5)',
+      borderBottom: '1px solid rgba(51, 65, 85, 0.5)',
+      padding: '16px 24px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    },
+    headerTitle: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px'
+    },
+    pulse: {
+      width: '12px',
+      height: '12px',
+      background: '#10b981',
+      borderRadius: '50%',
+      animation: 'pulse 2s infinite'
+    },
+    mainContent: {
+      flex: 1,
+      display: 'flex',
+      gap: '16px',
+      padding: '16px',
+      overflow: 'hidden'
+    },
+    leftPanel: {
+      width: '320px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      overflow: 'auto'
+    },
+    card: {
+      background: 'rgba(30, 41, 59, 0.5)',
+      border: '1px solid rgba(51, 65, 85, 0.5)',
+      borderRadius: '8px',
+      padding: '16px',
+      space: '12px'
+    },
+    rightPanel: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      overflow: 'hidden'
+    },
+    transcriptBox: {
+      flex: 1,
+      background: 'rgba(15, 23, 42, 0.3)',
+      border: '1px solid rgba(51, 65, 85, 0.5)',
+      borderRadius: '8px',
+      overflow: 'auto',
+      padding: '16px',
+      fontFamily: 'monospace',
+      fontSize: '14px',
+      lineHeight: '1.6'
+    },
+    guidanceBox: {
+      background: 'rgba(5, 60, 35, 0.2)',
+      border: '1px solid rgba(34, 197, 94, 0.5)',
+      borderRadius: '8px',
+      padding: '16px'
+    },
+    buttonGroup: {
+      display: 'flex',
+      gap: '16px',
+      justifyContent: 'center'
+    },
+    button: {
+      padding: '12px 24px',
+      borderRadius: '8px',
+      border: 'none',
+      fontWeight: '600',
+      cursor: 'pointer',
+      fontSize: '16px',
+      transition: 'all 0.2s'
+    },
+    buttonStart: {
+      background: '#10b981',
+      color: '#fff'
+    },
+    buttonEnd: {
+      background: '#ef4444',
+      color: '#fff'
+    },
+    buttonSecondary: {
+      background: '#475569',
+      color: '#e2e8f0'
+    },
+    footer: {
+      background: 'rgba(15, 23, 42, 0.5)',
+      borderTop: '1px solid rgba(51, 65, 85, 0.5)',
+      padding: '8px 24px',
+      fontSize: '12px',
+      color: '#94a3b8',
+      display: 'flex',
+      justifyContent: 'space-between'
+    }
+  };
+
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col">
-      <div className="bg-slate-900/50 border-b border-slate-700/50 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-          <h1 className="text-2xl font-bold">Live Call System</h1>
+    <div style={styles.container}>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+
+      <div style={styles.header}>
+        <div style={styles.headerTitle}>
+          <div style={styles.pulse}></div>
+          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>Live Call System</h1>
         </div>
-        <div className="text-slate-400">
-          {callActive && <span className="font-mono text-emerald-400 mr-4">{formatTime(callDuration)}</span>}
+        <div style={{ color: '#cbd5e1' }}>
+          {callActive && <span style={{ fontFamily: 'monospace', color: '#10b981', marginRight: '16px' }}>{formatTime(callDuration)}</span>}
           ABC Brands
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 p-4 overflow-hidden">
-        <div className="w-80 flex flex-col gap-4 flex-shrink-0">
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
-            <p className="text-xs text-slate-400 uppercase mb-2 font-bold">Supplier</p>
-            <p className="text-xl font-semibold mb-4">ABC Brands</p>
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-xs text-slate-400">Contact</p>
-                <p className="text-slate-200">John Smith</p>
+      <div style={styles.mainContent}>
+        <div style={styles.leftPanel}>
+          <div style={styles.card}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>Supplier</p>
+            <p style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: '600' }}>ABC Brands</p>
+            <div style={{ space: '12px' }}>
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#94a3b8' }}>Contact</p>
+                <p style={{ margin: 0, fontSize: '14px' }}>John Smith</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Stage</p>
-                <p className="text-slate-200">Contact</p>
+                <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#94a3b8' }}>Stage</p>
+                <p style={{ margin: 0, fontSize: '14px' }}>Contact</p>
               </div>
             </div>
-            <div className="mt-4 flex items-center gap-2">
-              <p className="text-xs text-slate-400">Trust</p>
-              <div className="flex-1 bg-slate-700 h-2 rounded"><div className="h-full bg-cyan-400 w-1/2"></div></div>
-              <span className="text-sm text-cyan-400 font-bold">5/10</span>
+            <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>Trust</p>
+              <div style={{ flex: 1, height: '8px', background: '#334155', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: '#06b6d4', width: '50%' }}></div>
+              </div>
+              <span style={{ fontSize: '12px', color: '#06b6d4', fontWeight: '600' }}>5/10</span>
             </div>
           </div>
 
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 flex-1">
-            <p className="text-xs text-slate-400 uppercase mb-3 font-bold">Mission</p>
-            <p className="text-lg font-semibold mb-3">Discovery</p>
-            <p className="text-sm text-slate-200 mb-4">Understand supplier challenges and partnership appetite</p>
-            <p className="text-xs text-slate-400 mb-2">Success Criteria</p>
-            <ul className="space-y-2 text-sm">
-              <li className="text-slate-300">✓ Pain points identified</li>
-              <li className="text-slate-300">✓ Growth goals understood</li>
-              <li className="text-slate-300">✓ Partnership openness confirmed</li>
+          <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Mission</p>
+            <p style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '600' }}>Discovery</p>
+            <p style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#cbd5e1' }}>Understand supplier challenges and partnership appetite</p>
+            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#94a3b8' }}>Success Criteria</p>
+            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px' }}>
+              <li style={{ marginBottom: '4px' }}>✓ Pain points identified</li>
+              <li style={{ marginBottom: '4px' }}>✓ Growth goals understood</li>
+              <li>✓ Partnership openness confirmed</li>
             </ul>
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col gap-4">
-          <div className="flex-1 flex flex-col bg-slate-800/30 border border-slate-700/50 rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-700/50 bg-slate-800/50">
-              <p className="text-sm font-semibold">📝 Live Transcript</p>
-            </div>
-            <div className="flex-1 overflow-auto p-4 space-y-2 font-mono text-sm">
-              {transcript ? transcript.split('\n').map((l, i) => (
-                <div key={i} className="text-slate-300">{i+1}. {l}</div>
-              )) : (
-                <div className="flex items-center justify-center h-full text-slate-500">
-                  {callActive ? 'Waiting for transcript...' : 'Ready to start call'}
-                </div>
-              )}
-            </div>
+        <div style={styles.rightPanel}>
+          <div style={styles.transcriptBox}>
+            {transcript ? transcript.split('\n').map((l, i) => (
+              <div key={i} style={{ color: '#cbd5e1', marginBottom: '8px' }}><span style={{ color: '#64748b' }}>{i+1}.</span> {l}</div>
+            )) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
+                {callActive ? 'Waiting for transcript...' : 'Ready to start call'}
+              </div>
+            )}
           </div>
 
-          <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-lg p-4">
-            <p className="text-sm font-semibold text-emerald-400 mb-2">💡 Live Guidance</p>
-            <p className="text-sm text-slate-200">
+          <div style={styles.guidanceBox}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '600', color: '#10b981' }}>💡 Live Guidance</p>
+            <p style={{ margin: 0, fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6' }}>
               {guidance || 'AI guidance will appear here as you speak...'}
             </p>
           </div>
 
-          <div className="flex gap-4 justify-center">
+          <div style={styles.buttonGroup}>
             <button
               onClick={callActive ? handleEndCall : handleStartCall}
-              className={`px-8 py-3 rounded-lg font-semibold text-white transition-all ${
-                callActive ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
-              }`}
+              style={{...styles.button, ...(callActive ? styles.buttonEnd : styles.buttonStart)}}
             >
               {callActive ? '📞 End Call' : '📞 Start Call'}
             </button>
             {callActive && (
-              <button className="px-6 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold">
+              <button style={{...styles.button, ...styles.buttonSecondary}}>
                 {isRecording ? '🔴 Recording' : '⏸️ Paused'}
               </button>
             )}
-            <button className="px-6 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold">
+            <button style={{...styles.button, ...styles.buttonSecondary}}>
               💾 Save Call
             </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-slate-900/50 border-t border-slate-700/50 px-6 py-2 text-xs text-slate-400 flex justify-between">
+      <div style={styles.footer}>
         <span>Real-time powered by Deepgram + Claude</span>
         <span>Ready for production</span>
       </div>
