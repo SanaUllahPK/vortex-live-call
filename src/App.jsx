@@ -2,6 +2,34 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
+const CALL_TYPES = {
+  quick_note: {
+    label: '📝 Quick Note',
+    description: 'Light exploratory outreach',
+    color: '#64748b'
+  },
+  brand_registry: {
+    label: '🏷️ Brand Registry',
+    description: 'Amazon-specific partnership',
+    color: '#f59e0b'
+  },
+  retail_inquiry: {
+    label: '🏬 Retail Inquiry',
+    description: 'Retail distribution opportunity',
+    color: '#06b6d4'
+  },
+  distributor_inquiry: {
+    label: '🚚 Distributor Inquiry',
+    description: 'Distributor network opportunity',
+    color: '#8b5cf6'
+  },
+  wholesale_partnership: {
+    label: '🤝 Wholesale Partnership',
+    description: 'Direct wholesale opportunity',
+    color: '#10b981'
+  }
+};
+
 export default function LiveCallUI() {
   const [callActive, setCallActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -11,6 +39,8 @@ export default function LiveCallUI() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [briefInput, setBriefInput] = useState('');
   const [briefText, setBriefText] = useState('');
+  const [callType, setCallType] = useState('wholesale_partnership');
+  const [callTypeSelected, setCallTypeSelected] = useState('');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -73,7 +103,8 @@ export default function LiveCallUI() {
           transcript: text,
           missionType: 'Discovery',
           conversationHistory: history,
-          brief: briefText
+          brief: briefText,
+          callType: callTypeSelected
         })
       });
       
@@ -138,6 +169,7 @@ export default function LiveCallUI() {
 
   const startCall = () => {
     setBriefText(briefInput);
+    setCallTypeSelected(callType);
     setCallActive(true);
     setCallDuration(0);
     setConversationHistory([]);
@@ -155,13 +187,22 @@ export default function LiveCallUI() {
       `[${item.timestamp}] ${item.speaker === 'supplier' ? 'SUPPLIER' : 'YOU'}: ${item.text}`
     ).join('\n\n');
 
-    const fullText = `DISCOVERY BRIEF:\n${briefText}\n\n---\n\nCONVERSATION TRANSCRIPT:\n\n${transcript}`;
+    const fullText = `CALL TYPE: ${CALL_TYPES[callTypeSelected]?.label || 'Unknown'}
+
+DISCOVERY BRIEF:
+${briefText}
+
+---
+
+CONVERSATION TRANSCRIPT:
+
+${transcript}`;
 
     const blob = new Blob([fullText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ABC-Brands-Call-${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `Vortex-Call-${callTypeSelected}-${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
   };
 
@@ -277,10 +318,35 @@ export default function LiveCallUI() {
       padding: '16px',
       minHeight: '80px'
     },
-    briefSection: {
+    callTypeSelector: {
       display: 'flex',
       flexDirection: 'column',
       gap: '12px'
+    },
+    callTypeLabel: {
+      fontSize: '12px',
+      fontWeight: '600',
+      color: '#94a3b8',
+      textTransform: 'uppercase'
+    },
+    callTypeGrid: {
+      display: 'grid',
+      gridTemplateColumns: '1fr',
+      gap: '8px'
+    },
+    callTypeOption: {
+      padding: '12px',
+      background: 'rgba(15, 23, 42, 0.5)',
+      border: '2px solid rgba(51, 65, 85, 0.5)',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      transition: 'all 0.2s',
+      color: '#cbd5e1',
+      textAlign: 'left'
+    },
+    callTypeOptionActive: {
+      borderColor: '#10b981',
+      background: 'rgba(16, 185, 129, 0.1)'
     },
     briefInput: {
       width: '100%',
@@ -293,7 +359,7 @@ export default function LiveCallUI() {
       lineHeight: '1.5',
       fontFamily: 'system-ui',
       resize: 'none',
-      height: '120px'
+      height: '100px'
     },
     buttonGroup: {
       display: 'flex',
@@ -353,7 +419,7 @@ export default function LiveCallUI() {
         </div>
         <div style={{ color: '#cbd5e1' }}>
           {callActive && <span style={{ fontFamily: 'monospace', color: '#10b981', marginRight: '16px' }}>{formatTime(callDuration)}</span>}
-          ABC Brands
+          {callActive && CALL_TYPES[callTypeSelected]?.label}
         </div>
       </div>
 
@@ -382,22 +448,47 @@ export default function LiveCallUI() {
           </div>
 
           {!callActive && (
-            <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Discovery Brief</p>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>What's the focus? What to ask about? What to avoid?</p>
-              <textarea
-                value={briefInput}
-                onChange={(e) => setBriefInput(e.target.value)}
-                placeholder="E.g., Focus on: Amazon listings, inventory. Avoid: pricing, exclusivity..."
-                style={styles.briefInput}
-              />
-            </div>
+            <>
+              <div style={styles.card}>
+                <p style={styles.callTypeLabel}>Call Type</p>
+                <div style={styles.callTypeGrid}>
+                  {Object.entries(CALL_TYPES).map(([key, value]) => (
+                    <button
+                      key={key}
+                      onClick={() => setCallType(key)}
+                      style={{
+                        ...styles.callTypeOption,
+                        ...(callType === key ? styles.callTypeOptionActive : {})
+                      }}
+                    >
+                      <div style={{ fontWeight: '600', fontSize: '13px' }}>{value.label}</div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{value.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Discovery Brief</p>
+                <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>What's the focus of this call?</p>
+                <textarea
+                  value={briefInput}
+                  onChange={(e) => setBriefInput(e.target.value)}
+                  placeholder="E.g., Understand their distribution model, learn about wholesale interest, identify decision makers..."
+                  style={styles.briefInput}
+                />
+              </div>
+            </>
           )}
 
           {callActive && (
             <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Call Brief</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.5' }}>{briefText}</p>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Call Type</p>
+              <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '600', color: CALL_TYPES[callTypeSelected]?.color }}>
+                {CALL_TYPES[callTypeSelected]?.label}
+              </p>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>Brief:</p>
+              <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1', lineHeight: '1.5' }}>{briefText}</p>
             </div>
           )}
         </div>
@@ -499,8 +590,8 @@ export default function LiveCallUI() {
       </div>
 
       <div style={styles.footer}>
-        <span>Discovery brief guides AI responses</span>
-        <span>Context-aware coaching</span>
+        <span>Call type guides coaching strategy</span>
+        <span>Discovery-focused approach</span>
       </div>
     </div>
   );
