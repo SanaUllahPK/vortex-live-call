@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+
+const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
 export default function LiveCallUI() {
   const [isRecording, setIsRecording] = useState(false);
@@ -6,6 +8,11 @@ export default function LiveCallUI() {
   const [callDuration, setCallDuration] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [guidance, setGuidance] = useState('');
+  const mediaStreamRef = useRef(null);
+  const processorRef = useRef(null);
+  const websocketRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const lineCountRef = useRef(0);
 
   useEffect(() => {
     let interval;
@@ -17,53 +24,117 @@ export default function LiveCallUI() {
 
   const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  const handleStartCall = () => {
+  const startDeepgram = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      const websocket = new WebSocket(
+        `wss://api.deepgram.com/v1/listen?key=${DEEPGRAM_API_KEY}&model=nova-2&encoding=linear16&sample_rate=16000`
+      );
+      websocketRef.current = websocket;
+
+      websocket.onopen = () => console.log('Deepgram connected');
+
+      websocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.channel?.alternatives?.[0]?.transcript) {
+          const newText = data.channel.alternatives[0].transcript;
+          if (newText) {
+            setTranscript(prev => {
+              const lines = prev ? prev.split('\n') : [];
+              if (data.is_final) {
+                lineCountRef.current++;
+                return prev ? prev + '\n' + lineCountRef.current + '. ' + newText : lineCountRef.current + '. ' + newText;
+              } else {
+                return prev ? prev + ' ' + newText : newText;
+              }
+            });
+          }
+        }
+      };
+
+      websocket.onerror = (err) => {
+        console.error('Deepgram error:', err);
+      };
+
+      websocket.onclose = () => console.log('Deepgram disconnected');
+
+      processor.onaudioprocess = (event) => {
+        const audioData = event.inputBuffer.getChannelData(0);
+        const pcmData = new Int16Array(audioData.length);
+        for (let i = 0; i < audioData.length; i++) {
+          pcmData[i] = Math.max(-32768, Math.min(32767, audioData[i] * 32767));
+        }
+        if (websocket.readyState === WebSocket.OPEN) {
+          websocket.send(pcmData.buffer);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+    } catch (err) {
+      console.error('Microphone access error:', err);
+      alert('Please allow microphone access to use Live Call System');
+    }
+  };
+
+  const stopDeepgram = () => {
+    if (websocketRef.current) websocketRef.current.close();
+    if (processorRef.current) processorRef.current.disconnect();
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    if (audioContextRef.current) audioContextRef.current.close();
+  };
+
+  const handleStartCall = async () => {
     setCallActive(true);
     setIsRecording(true);
     setCallDuration(0);
+    setTranscript('');
+    lineCountRef.current = 0;
+    await startDeepgram();
   };
 
   const handleEndCall = () => {
     setCallActive(false);
     setIsRecording(false);
+    stopDeepgram();
   };
 
   useEffect(() => {
-    if (!callActive) return;
-    const transcripts = [
-      'Hi John, this is Sanaullah from Vortex Origin Brands.',
-      'We work with brands on wholesale distribution.',
-      'I came across ABC Brands and thought there might be an opportunity.',
-      'Do you have 15 minutes to chat?',
-      'Great! What is your biggest challenge on Amazon?',
-    ];
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index < transcripts.length) {
-        setTranscript(prev => prev + (prev ? '\n' : '') + transcripts[index]);
-        index++;
+    if (!transcript || !callActive) return;
+    
+    const generateGuidance = async () => {
+      try {
+        const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript: transcript,
+            missionType: 'Discovery'
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setGuidance(data.guidance || '');
+        }
+      } catch (err) {
+        console.error('Guidance error:', err);
       }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [callActive]);
+    };
 
-  useEffect(() => {
-    if (!callActive) return;
-    const messages = [
-      'They seem engaged. Keep momentum.',
-      'Good opening. Now listen more.',
-      'Ask about their growth plans.',
-      'You\'re building rapport well.',
-    ];
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index < messages.length) {
-        setGuidance(messages[index]);
-        index++;
-      }
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [callActive]);
+    const timer = setTimeout(generateGuidance, 3000);
+    return () => clearTimeout(timer);
+  }, [transcript, callActive]);
 
   const styles = {
     container: {
@@ -112,8 +183,7 @@ export default function LiveCallUI() {
       background: 'rgba(30, 41, 59, 0.5)',
       border: '1px solid rgba(51, 65, 85, 0.5)',
       borderRadius: '8px',
-      padding: '16px',
-      space: '12px'
+      padding: '16px'
     },
     rightPanel: {
       flex: 1,
@@ -201,7 +271,7 @@ export default function LiveCallUI() {
           <div style={styles.card}>
             <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase' }}>Supplier</p>
             <p style={{ margin: '0 0 16px 0', fontSize: '20px', fontWeight: '600' }}>ABC Brands</p>
-            <div style={{ space: '12px' }}>
+            <div>
               <div style={{ marginBottom: '12px' }}>
                 <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#94a3b8' }}>Contact</p>
                 <p style={{ margin: 0, fontSize: '14px' }}>John Smith</p>
@@ -236,10 +306,10 @@ export default function LiveCallUI() {
         <div style={styles.rightPanel}>
           <div style={styles.transcriptBox}>
             {transcript ? transcript.split('\n').map((l, i) => (
-              <div key={i} style={{ color: '#cbd5e1', marginBottom: '8px' }}><span style={{ color: '#64748b' }}>{i+1}.</span> {l}</div>
+              <div key={i} style={{ color: '#cbd5e1', marginBottom: '8px' }}>{l}</div>
             )) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
-                {callActive ? 'Waiting for transcript...' : 'Ready to start call'}
+                {callActive ? '🎤 Listening... Speak now!' : 'Ready to start call'}
               </div>
             )}
           </div>
@@ -247,7 +317,7 @@ export default function LiveCallUI() {
           <div style={styles.guidanceBox}>
             <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '600', color: '#10b981' }}>💡 Live Guidance</p>
             <p style={{ margin: 0, fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6' }}>
-              {guidance || 'AI guidance will appear here as you speak...'}
+              {guidance || 'Claude AI coaching will appear here...'}
             </p>
           </div>
 
@@ -260,7 +330,7 @@ export default function LiveCallUI() {
             </button>
             {callActive && (
               <button style={{...styles.button, ...styles.buttonSecondary}}>
-                {isRecording ? '🔴 Recording' : '⏸️ Paused'}
+                🎤 Recording
               </button>
             )}
             <button style={{...styles.button, ...styles.buttonSecondary}}>
