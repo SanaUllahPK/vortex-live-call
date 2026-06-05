@@ -8,11 +8,9 @@ export default function LiveCallUI() {
   const [callDuration, setCallDuration] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [guidance, setGuidance] = useState('');
-  const mediaStreamRef = useRef(null);
-  const processorRef = useRef(null);
-  const websocketRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const lineCountRef = useRef(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     let interval;
@@ -24,91 +22,90 @@ export default function LiveCallUI() {
 
   const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  const startDeepgram = async () => {
+  const sendToDeepgram = async (audioBlob) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      audioContextRef.current = audioContext;
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      const websocket = new WebSocket(
-        `wss://api.deepgram.com/v1/listen?key=${DEEPGRAM_API_KEY}&model=nova-2&encoding=linear16&sample_rate=16000`
+      const response = await fetch(
+        `https://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&language=en`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+            'Content-Type': 'audio/wav'
+          },
+          body: audioBlob
+        }
       );
-      websocketRef.current = websocket;
 
-      websocket.onopen = () => console.log('Deepgram connected');
+      if (!response.ok) {
+        console.error('Deepgram error:', response.statusText);
+        return;
+      }
 
-      websocket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.channel?.alternatives?.[0]?.transcript) {
-          const newText = data.channel.alternatives[0].transcript;
-          if (newText) {
-            setTranscript(prev => {
-              const lines = prev ? prev.split('\n') : [];
-              if (data.is_final) {
-                lineCountRef.current++;
-                return prev ? prev + '\n' + lineCountRef.current + '. ' + newText : lineCountRef.current + '. ' + newText;
-              } else {
-                return prev ? prev + ' ' + newText : newText;
-              }
-            });
-          }
+      const result = await response.json();
+      if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
+        const newTranscript = result.results.channels[0].alternatives[0].transcript;
+        if (newTranscript) {
+          setTranscript(prev => prev + (prev ? ' ' : '') + newTranscript);
         }
-      };
-
-      websocket.onerror = (err) => {
-        console.error('Deepgram error:', err);
-      };
-
-      websocket.onclose = () => console.log('Deepgram disconnected');
-
-      processor.onaudioprocess = (event) => {
-        const audioData = event.inputBuffer.getChannelData(0);
-        const pcmData = new Int16Array(audioData.length);
-        for (let i = 0; i < audioData.length; i++) {
-          pcmData[i] = Math.max(-32768, Math.min(32767, audioData[i] * 32767));
-        }
-        if (websocket.readyState === WebSocket.OPEN) {
-          websocket.send(pcmData.buffer);
-        }
-      };
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      }
     } catch (err) {
-      console.error('Microphone access error:', err);
-      alert('Please allow microphone access to use Live Call System');
+      console.error('Deepgram request failed:', err);
     }
-  };
-
-  const stopDeepgram = () => {
-    if (websocketRef.current) websocketRef.current.close();
-    if (processorRef.current) processorRef.current.disconnect();
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-    if (audioContextRef.current) audioContextRef.current.close();
   };
 
   const handleStartCall = async () => {
-    setCallActive(true);
-    setIsRecording(true);
-    setCallDuration(0);
-    setTranscript('');
-    lineCountRef.current = 0;
-    await startDeepgram();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        await sendToDeepgram(audioBlob);
+        audioChunksRef.current = [];
+      };
+
+      mediaRecorder.start();
+      
+      setCallActive(true);
+      setIsRecording(true);
+      setCallDuration(0);
+      setTranscript('');
+
+      // Send audio every 2 seconds
+      const interval = setInterval(() => {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          mediaRecorder.start();
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
+    } catch (err) {
+      console.error('Microphone access error:', err);
+      alert('Please allow microphone access');
+    }
   };
 
   const handleEndCall = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
     setCallActive(false);
     setIsRecording(false);
-    stopDeepgram();
   };
 
+  // Get guidance from Claude
   useEffect(() => {
     if (!transcript || !callActive) return;
     
@@ -128,7 +125,7 @@ export default function LiveCallUI() {
           setGuidance(data.guidance || '');
         }
       } catch (err) {
-        console.error('Guidance error:', err);
+        console.error('Claude coaching error:', err);
       }
     };
 
@@ -305,9 +302,9 @@ export default function LiveCallUI() {
 
         <div style={styles.rightPanel}>
           <div style={styles.transcriptBox}>
-            {transcript ? transcript.split('\n').map((l, i) => (
-              <div key={i} style={{ color: '#cbd5e1', marginBottom: '8px' }}>{l}</div>
-            )) : (
+            {transcript ? (
+              <div style={{ color: '#cbd5e1' }}>📝 {transcript}</div>
+            ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
                 {callActive ? '🎤 Listening... Speak now!' : 'Ready to start call'}
               </div>
