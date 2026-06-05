@@ -3,14 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
 
 export default function LiveCallUI() {
-  const [isRecording, setIsRecording] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
-  const [transcript, setTranscript] = useState('');
-  const [guidance, setGuidance] = useState('');
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const streamRef = useRef(null);
+  const [theirWords, setTheirWords] = useState('');
+  const [suggestedResponse, setSuggestedResponse] = useState('');
+  const [mediaRecorderRef, setMediaRecorderRef] = useState(null);
+  const [audioChunksRef, setAudioChunksRef] = useState([]);
+  const [streamRef, setStreamRef] = useState(null);
 
   useEffect(() => {
     let interval;
@@ -45,7 +44,8 @@ export default function LiveCallUI() {
       if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
         const newTranscript = result.results.channels[0].alternatives[0].transcript;
         if (newTranscript) {
-          setTranscript(prev => prev + (prev ? ' ' : '') + newTranscript);
+          setTheirWords(newTranscript);
+          generateResponse(newTranscript);
         }
       }
     } catch (err) {
@@ -53,39 +53,59 @@ export default function LiveCallUI() {
     }
   };
 
+  const generateResponse = async (transcript) => {
+    try {
+      const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: transcript,
+          missionType: 'Discovery'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestedResponse(data.guidance || '');
+      }
+    } catch (err) {
+      console.error('Claude response error:', err);
+    }
+  };
+
   const handleStartCall = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      setStreamRef(stream);
       
       const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+      setMediaRecorderRef(mediaRecorder);
+      const audioChunks = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
+        audioChunks.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
         await sendToDeepgram(audioBlob);
-        audioChunksRef.current = [];
+        audioChunks.length = 0;
       };
 
       mediaRecorder.start();
       
       setCallActive(true);
-      setIsRecording(true);
       setCallDuration(0);
-      setTranscript('');
+      setTheirWords('');
+      setSuggestedResponse('');
 
-      // Send audio every 2 seconds
+      // Send audio every 3 seconds
       const interval = setInterval(() => {
         if (mediaRecorder.state === 'recording') {
           mediaRecorder.stop();
           mediaRecorder.start();
         }
-      }, 2000);
+      }, 3000);
 
       return () => clearInterval(interval);
     } catch (err) {
@@ -95,43 +115,22 @@ export default function LiveCallUI() {
   };
 
   const handleEndCall = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
+    if (mediaRecorderRef && mediaRecorderRef.state === 'recording') {
+      mediaRecorderRef.stop();
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+    if (streamRef) {
+      streamRef.getTracks().forEach(track => track.stop());
     }
     setCallActive(false);
-    setIsRecording(false);
   };
 
-  // Get guidance from Claude
-  useEffect(() => {
-    if (!transcript || !callActive) return;
-    
-    const generateGuidance = async () => {
-      try {
-        const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transcript: transcript,
-            missionType: 'Discovery'
-          })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setGuidance(data.guidance || '');
-        }
-      } catch (err) {
-        console.error('Claude coaching error:', err);
-      }
-    };
-
-    const timer = setTimeout(generateGuidance, 3000);
-    return () => clearTimeout(timer);
-  }, [transcript, callActive]);
+  const handleTheirWordsChange = (e) => {
+    const text = e.target.value;
+    setTheirWords(text);
+    if (text.trim()) {
+      generateResponse(text);
+    }
+  };
 
   const styles = {
     container: {
@@ -189,22 +188,61 @@ export default function LiveCallUI() {
       gap: '16px',
       overflow: 'hidden'
     },
-    transcriptBox: {
+    dialogContainer: {
       flex: 1,
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: '16px',
+      overflow: 'hidden'
+    },
+    dialogBox: {
       background: 'rgba(15, 23, 42, 0.3)',
       border: '1px solid rgba(51, 65, 85, 0.5)',
       borderRadius: '8px',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden'
+    },
+    dialogLabel: {
+      fontSize: '12px',
+      fontWeight: '600',
+      color: '#94a3b8',
+      textTransform: 'uppercase',
+      padding: '12px',
+      borderBottom: '1px solid rgba(51, 65, 85, 0.5)',
+      background: 'rgba(15, 23, 42, 0.5)'
+    },
+    dialogContent: {
+      flex: 1,
       overflow: 'auto',
       padding: '16px',
-      fontFamily: 'monospace',
       fontSize: '14px',
-      lineHeight: '1.6'
+      lineHeight: '1.6',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
     },
-    guidanceBox: {
-      background: 'rgba(5, 60, 35, 0.2)',
-      border: '1px solid rgba(34, 197, 94, 0.5)',
-      borderRadius: '8px',
-      padding: '16px'
+    dialogInput: {
+      flex: 1,
+      overflow: 'auto',
+      padding: '16px',
+      fontSize: '14px',
+      lineHeight: '1.6',
+      background: 'transparent',
+      border: 'none',
+      color: '#cbd5e1',
+      resize: 'none',
+      fontFamily: 'monospace'
+    },
+    dialogText: {
+      color: '#cbd5e1',
+      textAlign: 'left'
+    },
+    theyLabel: {
+      color: '#f87171'
+    },
+    youLabel: {
+      color: '#10b981'
     },
     buttonGroup: {
       display: 'flex',
@@ -301,21 +339,39 @@ export default function LiveCallUI() {
         </div>
 
         <div style={styles.rightPanel}>
-          <div style={styles.transcriptBox}>
-            {transcript ? (
-              <div style={{ color: '#cbd5e1' }}>📝 {transcript}</div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
-                {callActive ? '🎤 Listening... Speak now!' : 'Ready to start call'}
-              </div>
-            )}
-          </div>
+          <div style={styles.dialogContainer}>
+            {/* THEY SAID */}
+            <div style={styles.dialogBox}>
+              <div style={{...styles.dialogLabel, ...styles.theyLabel}}>🗣️ They Said</div>
+              {callActive ? (
+                <textarea
+                  value={theirWords}
+                  onChange={handleTheirWordsChange}
+                  placeholder="Listening... or type what they said..."
+                  style={{...styles.dialogInput, color: '#cbd5e1'}}
+                />
+              ) : (
+                <div style={styles.dialogContent}>
+                  {theirWords ? (
+                    <div style={styles.dialogText}>{theirWords}</div>
+                  ) : (
+                    <div style={{ color: '#64748b' }}>Ready to listen...</div>
+                  )}
+                </div>
+              )}
+            </div>
 
-          <div style={styles.guidanceBox}>
-            <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '600', color: '#10b981' }}>💡 Live Guidance</p>
-            <p style={{ margin: 0, fontSize: '14px', color: '#cbd5e1', lineHeight: '1.6' }}>
-              {guidance || 'Claude AI coaching will appear here...'}
-            </p>
+            {/* YOU SHOULD SAY */}
+            <div style={styles.dialogBox}>
+              <div style={{...styles.dialogLabel, ...styles.youLabel}}>💬 You Should Say</div>
+              <div style={{...styles.dialogContent, alignItems: 'flex-start', justifyContent: 'flex-start', paddingTop: '16px'}}>
+                {suggestedResponse ? (
+                  <div style={styles.dialogText}>{suggestedResponse}</div>
+                ) : (
+                  <div style={{ color: '#64748b' }}>Claude will suggest responses here...</div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div style={styles.buttonGroup}>
@@ -323,13 +379,8 @@ export default function LiveCallUI() {
               onClick={callActive ? handleEndCall : handleStartCall}
               style={{...styles.button, ...(callActive ? styles.buttonEnd : styles.buttonStart)}}
             >
-              {callActive ? '📞 End Call' : '📞 Start Call'}
+              {callActive ? '📞 End Call' : '🎤 Record Supplier'}
             </button>
-            {callActive && (
-              <button style={{...styles.button, ...styles.buttonSecondary}}>
-                🎤 Recording
-              </button>
-            )}
             <button style={{...styles.button, ...styles.buttonSecondary}}>
               💾 Save Call
             </button>
@@ -338,7 +389,7 @@ export default function LiveCallUI() {
       </div>
 
       <div style={styles.footer}>
-        <span>Real-time powered by Deepgram + Claude</span>
+        <span>Two-way dialogue powered by Deepgram + Claude</span>
         <span>Ready for production</span>
       </div>
     </div>
