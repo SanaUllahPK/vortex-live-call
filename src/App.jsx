@@ -9,6 +9,8 @@ export default function LiveCallUI() {
   const [conversationHistory, setConversationHistory] = useState([]);
   const [suggestedResponse, setSuggestedResponse] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [briefInput, setBriefInput] = useState('');
+  const [briefText, setBriefText] = useState('');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -47,14 +49,12 @@ export default function LiveCallUI() {
       if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
         const supplierWords = result.results.channels[0].alternatives[0].transcript;
         if (supplierWords) {
-          // Add to history FIRST
           const updatedHistory = [...conversationHistory, {
             speaker: 'supplier',
             text: supplierWords,
             timestamp: new Date().toLocaleTimeString()
           }];
           setConversationHistory(updatedHistory);
-          // Then generate response with full context
           generateResponse(supplierWords, updatedHistory);
         }
       }
@@ -72,7 +72,8 @@ export default function LiveCallUI() {
         body: JSON.stringify({
           transcript: text,
           missionType: 'Discovery',
-          conversationHistory: history
+          conversationHistory: history,
+          brief: briefText
         })
       });
       
@@ -135,6 +136,13 @@ export default function LiveCallUI() {
     }
   };
 
+  const startCall = () => {
+    setBriefText(briefInput);
+    setCallActive(true);
+    setCallDuration(0);
+    setConversationHistory([]);
+  };
+
   const endCall = () => {
     if (isListening) {
       stopListening();
@@ -147,7 +155,9 @@ export default function LiveCallUI() {
       `[${item.timestamp}] ${item.speaker === 'supplier' ? 'SUPPLIER' : 'YOU'}: ${item.text}`
     ).join('\n\n');
 
-    const blob = new Blob([transcript], { type: 'text/plain' });
+    const fullText = `DISCOVERY BRIEF:\n${briefText}\n\n---\n\nCONVERSATION TRANSCRIPT:\n\n${transcript}`;
+
+    const blob = new Blob([fullText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -267,6 +277,24 @@ export default function LiveCallUI() {
       padding: '16px',
       minHeight: '80px'
     },
+    briefSection: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px'
+    },
+    briefInput: {
+      width: '100%',
+      padding: '12px',
+      background: 'rgba(15, 23, 42, 0.5)',
+      border: '1px solid rgba(51, 65, 85, 0.5)',
+      borderRadius: '6px',
+      color: '#cbd5e1',
+      fontSize: '13px',
+      lineHeight: '1.5',
+      fontFamily: 'system-ui',
+      resize: 'none',
+      height: '120px'
+    },
     buttonGroup: {
       display: 'flex',
       gap: '12px',
@@ -353,17 +381,25 @@ export default function LiveCallUI() {
             </div>
           </div>
 
-          <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Mission</p>
-            <p style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '600' }}>Discovery</p>
-            <p style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#cbd5e1' }}>Understand supplier challenges and partnership appetite</p>
-            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#94a3b8' }}>Success Criteria</p>
-            <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px' }}>
-              <li style={{ marginBottom: '4px' }}>✓ Pain points identified</li>
-              <li style={{ marginBottom: '4px' }}>✓ Growth goals understood</li>
-              <li>✓ Partnership openness confirmed</li>
-            </ul>
-          </div>
+          {!callActive && (
+            <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Discovery Brief</p>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#cbd5e1' }}>What's the focus? What to ask about? What to avoid?</p>
+              <textarea
+                value={briefInput}
+                onChange={(e) => setBriefInput(e.target.value)}
+                placeholder="E.g., Focus on: Amazon listings, inventory. Avoid: pricing, exclusivity..."
+                style={styles.briefInput}
+              />
+            </div>
+          )}
+
+          {callActive && (
+            <div style={{ ...styles.card, flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '600' }}>Call Brief</p>
+              <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.5' }}>{briefText}</p>
+            </div>
+          )}
         </div>
 
         <div style={styles.rightPanel}>
@@ -396,7 +432,7 @@ export default function LiveCallUI() {
                   </div>
                 ) : (
                   <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>
-                    Listen to supplier for suggestion
+                    Listen to supplier
                   </div>
                 )}
               </div>
@@ -406,12 +442,14 @@ export default function LiveCallUI() {
           <div style={styles.buttonGroup}>
             {!callActive ? (
               <button
-                onClick={() => {
-                  setCallActive(true);
-                  setCallDuration(0);
-                  setConversationHistory([]);
+                onClick={startCall}
+                disabled={!briefInput.trim()}
+                style={{
+                  ...styles.button,
+                  ...styles.buttonPrimary,
+                  opacity: briefInput.trim() ? 1 : 0.5,
+                  cursor: briefInput.trim() ? 'pointer' : 'not-allowed'
                 }}
-                style={{...styles.button, ...styles.buttonPrimary}}
               >
                 📞 Start Call
               </button>
@@ -461,8 +499,8 @@ export default function LiveCallUI() {
       </div>
 
       <div style={styles.footer}>
-        <span>Full conversation transcript saved on download</span>
-        <span>Context-aware responses</span>
+        <span>Discovery brief guides AI responses</span>
+        <span>Context-aware coaching</span>
       </div>
     </div>
   );
