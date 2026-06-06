@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
-const API_URL = import.meta.env.VITE_API_URL;
 
 const CALL_TYPES = {
   quick_note: { label: '📝 Quick Note', color: '#64748b' },
@@ -11,81 +10,21 @@ const CALL_TYPES = {
 };
 
 export default function LiveCallUI() {
-  // Screens: dashboard, brief, call, summary
-  const [screen, setScreen] = useState('dashboard');
-  
-  // Dashboard state
-  const [suppliers, setSuppliers] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
-  
-  // Supplier state
-  const [selectedSupplier, setSelectedSupplier] = useState(null);
-  const [supplierProfile, setSupplierProfile] = useState(null);
-  
-  // Brief state
-  const [briefInput, setBriefInput] = useState('');
-  const [briefText, setBriefText] = useState('');
-  const [callType, setCallType] = useState('distributor_inquiry');
-  const [callTypeSelected, setCallTypeSelected] = useState('');
-  
-  // Call state
   const [callActive, setCallActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [conversationHistory, setConversationHistory] = useState([]);
   const [sayNow, setSayNow] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  // Summary state
-  const [callSummary, setCallSummary] = useState(null);
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [callOutcome, setCallOutcome] = useState('Follow Up');
+  const [briefInput, setBriefInput] = useState('');
+  const [briefText, setBriefText] = useState('');
+  const [callType, setCallType] = useState('distributor_inquiry');
+  const [callTypeSelected, setCallTypeSelected] = useState('');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
 
-  // Load suppliers on dashboard
-  useEffect(() => {
-    if (screen === 'dashboard') {
-      loadSuppliers();
-    }
-  }, [screen, statusFilter]);
-
-  const loadSuppliers = async () => {
-    setLoadingSuppliers(true);
-    try {
-      const query = statusFilter === 'all' ? '' : `?status=${statusFilter}`;
-      const response = await fetch(`${API_URL}/api/suppliers/dashboard${query}`);
-      const data = await response.json();
-      setSuppliers(data.suppliers || []);
-    } catch (err) {
-      console.error('Failed to load suppliers:', err);
-      alert('Failed to load suppliers');
-    } finally {
-      setLoadingSuppliers(false);
-    }
-  };
-
-  const selectSupplier = async (supplier) => {
-    setSelectedSupplier(supplier);
-    try {
-      const response = await fetch(`${API_URL}/api/supplier/load`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier_id: supplier.supplier_id })
-      });
-      const profile = await response.json();
-      setSupplierProfile(profile);
-      setScreen('brief');
-    } catch (err) {
-      console.error('Error loading supplier profile:', err);
-      alert('Failed to load supplier profile');
-    }
-  };
-
-  // Call timer
   useEffect(() => {
     let interval;
     if (callActive) {
@@ -134,15 +73,14 @@ export default function LiveCallUI() {
     setIsGenerating(true);
     setSayNow('');
     try {
-      const response = await fetch(`${API_URL}/api/analyze-live`, {
+      const response = await fetch(import.meta.env.VITE_API_URL + '/api/analyze-live', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: text,
           conversationHistory: history,
           brief: briefText,
-          callType: callTypeSelected,
-          supplierProfile
+          callType: callTypeSelected
         })
       });
       
@@ -200,50 +138,33 @@ export default function LiveCallUI() {
     setCallDuration(0);
     setConversationHistory([]);
     setSayNow('');
-    setScreen('call');
   };
 
-  const endCall = async () => {
+  const endCall = () => {
     if (isListening) stopListening();
-    
-    // Generate summary
-    try {
-      const response = await fetch(`${API_URL}/api/interaction/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          supplier_id: selectedSupplier.supplier_id,
-          contact_id: supplierProfile?.primary_contact?.contact_id,
-          transcript: conversationHistory.map(h => `${h.speaker}: ${h.text}`).join('\n'),
-          duration_minutes: Math.round(callDuration / 60),
-          call_outcome: callOutcome,
-          next_step: briefText,
-          follow_up_date: followUpDate
-        })
-      });
-
-      if (response.ok) {
-        const summary = await response.json();
-        setCallSummary(summary);
-        setCallActive(false);
-        setScreen('summary');
-      }
-    } catch (err) {
-      console.error('Error saving call:', err);
-      alert('Failed to save call');
-    }
+    setCallActive(false);
   };
 
-  const finalizeSummary = () => {
-    setScreen('dashboard');
-    setSelectedSupplier(null);
-    setSupplierProfile(null);
-    setConversationHistory([]);
-    setCallSummary(null);
-    setBriefInput('');
+  const saveCall = () => {
+    const transcript = conversationHistory.map(item => 
+      `[${item.timestamp}] ${item.speaker === 'contact' ? 'CONTACT' : 'YOU'}: ${item.text}`
+    ).join('\n\n');
+
+    const fullText = `CALL TYPE: ${CALL_TYPES[callTypeSelected]?.label}
+BRIEF: ${briefText}
+
+---
+
+${transcript}`;
+
+    const blob = new Blob([fullText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Vortex-${callTypeSelected}-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
   };
 
-  // STYLES
   const styles = {
     container: {
       height: '100vh',
@@ -262,11 +183,6 @@ export default function LiveCallUI() {
       alignItems: 'center',
       fontSize: '14px',
       fontWeight: '700'
-    },
-    content: {
-      flex: 1,
-      overflow: 'auto',
-      padding: '16px'
     },
     mainContent: {
       flex: 1,
@@ -290,12 +206,6 @@ export default function LiveCallUI() {
       padding: '32px',
       maxWidth: '500px',
       width: '100%'
-    },
-    card: {
-      background: 'rgba(30, 41, 59, 0.5)',
-      border: '1px solid rgba(51, 65, 85, 0.5)',
-      borderRadius: '8px',
-      padding: '16px'
     },
     setupLabel: {
       fontSize: '12px',
@@ -469,161 +379,40 @@ export default function LiveCallUI() {
     }
   };
 
-  // ════════════════════════════════════════
-  // DASHBOARD SCREEN
-  // ════════════════════════════════════════
-  if (screen === 'dashboard') {
-    return (
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <span>📊 SUPPLIER DASHBOARD</span>
-          <span>Total: {suppliers.length} suppliers</span>
-        </div>
-        
-        <div style={styles.content}>
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {['all', 'New', 'Engaged', 'Interested', 'Applied', 'Approved', 'Active'].map(status => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                style={{
-                  ...styles.button,
-                  background: statusFilter === status ? '#10b981' : '#475569',
-                  color: '#fff'
-                }}
-              >
-                {status === 'all' ? 'All Suppliers' : status}
-              </button>
-            ))}
-          </div>
-
-          {loadingSuppliers ? (
-            <div>⏳ Loading suppliers...</div>
-          ) : suppliers.length === 0 ? (
-            <div style={{...styles.card, color: '#94a3b8'}}>
-              No suppliers found
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
-              {suppliers.map(supplier => (
-                <div
-                  key={supplier.supplier_id}
-                  onClick={() => selectSupplier(supplier)}
-                  style={{
-                    ...styles.card,
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr',
-                    alignItems: 'center',
-                    gap: '16px',
-                    padding: '12px'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: '600' }}>{supplier.company_name}</div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>Status: {supplier.relationship_status}</div>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                    <div>Last: {supplier.last_contact_date || 'Never'}</div>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                    <div>Follow Up: {supplier.next_follow_up_date || '-'}</div>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                    <div>Likelihood: {supplier.approval_likelihood}</div>
-                  </div>
-                  <div style={{ fontSize: '12px', color: supplier.missing_count > 0 ? '#f87171' : '#10b981' }}>
-                    <div>Missing: {supplier.missing_count} items</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <span>VORTEX LIVE CALL COPILOT</span>
+        {callActive && <span style={{ color: '#10b981', fontFamily: 'monospace', fontSize: '13px' }}>{formatTime(callDuration)} | {CALL_TYPES[callTypeSelected]?.label}</span>}
       </div>
-    );
-  }
 
-  // ════════════════════════════════════════
-  // PRE-CALL BRIEF SCREEN
-  // ════════════════════════════════════════
-  if (screen === 'brief') {
-    return (
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <span>📋 PRE-CALL BRIEF</span>
-          <button onClick={() => setScreen('dashboard')} style={{...styles.button, background: '#475569', color: '#fff'}}>
-            ← Back
-          </button>
-        </div>
-
-        <div style={styles.content}>
-          <div style={{maxWidth: '900px', margin: '0 auto'}}>
-            {/* Supplier Info */}
-            <div style={{...styles.card, marginBottom: '16px'}}>
-              <div style={{fontSize: '18px', fontWeight: '700', marginBottom: '8px'}}>
-                {supplierProfile?.supplier.company_name}
-              </div>
-              <div style={{color: '#94a3b8', fontSize: '13px'}}>
-                <div>Contact: {supplierProfile?.primary_contact?.name || 'Not specified'}</div>
-                <div>Status: {supplierProfile?.supplier.relationship_status}</div>
-              </div>
-            </div>
-
-            {/* Known + Missing Info */}
-            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px'}}>
-              {/* Known */}
-              <div style={{...styles.card}}>
-                <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px'}}>✓ KNOWN</div>
-                <div style={{fontSize: '13px', color: '#cbd5e1', lineHeight: '1.8'}}>
-                  {Object.entries(supplierProfile?.known_information || {})
-                    .filter(([k, v]) => v)
-                    .map(([k, v]) => (
-                      <div key={k}><span style={{color: '#94a3b8'}}>{k}:</span> {v}</div>
-                    ))}
-                  {Object.values(supplierProfile?.known_information || {}).filter(v => v).length === 0 && (
-                    <div style={{color: '#94a3b8'}}>Nothing known yet</div>
-                  )}
-                </div>
+      <div style={styles.mainContent}>
+        {!callActive ? (
+          <div style={styles.setupPanel}>
+            <div style={styles.setupCard}>
+              <div style={styles.setupLabel}>📞 Call Type</div>
+              <div style={styles.typeGrid}>
+                {Object.entries(CALL_TYPES).map(([key, value]) => (
+                  <button
+                    key={key}
+                    onClick={() => setCallType(key)}
+                    style={{
+                      ...styles.typeButton,
+                      ...(callType === key ? styles.typeButtonActive : {})
+                    }}
+                  >
+                    {value.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Missing */}
-              <div style={{...styles.card, borderColor: '#f87171'}}>
-                <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px', color: '#fca5a5'}}>□ MISSING</div>
-                <div style={{fontSize: '13px', color: '#fca5a5', lineHeight: '1.8'}}>
-                  {(supplierProfile?.missing_information || []).map((item, idx) => (
-                    <div key={idx}>□ {item}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Call Setup */}
-            <div style={{...styles.card, marginBottom: '16px'}}>
-              <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px'}}>📞 CALL SETUP</div>
-              
-              <div style={{marginBottom: '12px'}}>
-                <label style={{fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px'}}>Call Type</label>
-                <select
-                  value={callType}
-                  onChange={(e) => setCallType(e.target.value)}
-                  style={{width: '100%', padding: '8px', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px'}}
-                >
-                  {Object.entries(CALL_TYPES).map(([key, value]) => (
-                    <option key={key} value={key}>{value.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{marginBottom: '12px'}}>
-                <label style={{fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px'}}>Call Brief</label>
-                <textarea
-                  value={briefInput}
-                  onChange={(e) => setBriefInput(e.target.value)}
-                  placeholder="What's the focus? What do you want to learn?"
-                  style={styles.textarea}
-                />
-              </div>
+              <div style={styles.setupLabel}>📝 Brief</div>
+              <textarea
+                value={briefInput}
+                onChange={(e) => setBriefInput(e.target.value)}
+                placeholder="What's the focus? Who are you talking to? What do you want to learn?"
+                style={styles.textarea}
+              />
 
               <button
                 onClick={startCall}
@@ -638,155 +427,66 @@ export default function LiveCallUI() {
               </button>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ════════════════════════════════════════
-  // LIVE CALL SCREEN
-  // ════════════════════════════════════════
-  if (screen === 'call') {
-    return (
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <span>📞 LIVE CALL - {supplierProfile?.supplier.company_name}</span>
-          <span style={{color: '#10b981', fontFamily: 'monospace'}}>{formatTime(callDuration)}</span>
-        </div>
-
-        <div style={styles.mainContent}>
-          {/* CONVERSATION */}
-          <div style={styles.conversationBox}>
-            <div style={styles.boxHeader}>📞 Conversation</div>
-            <div style={styles.boxContent}>
-              {conversationHistory.length === 0 ? (
-                <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>Start listening...</div>
-              ) : (
-                conversationHistory.map((item, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      ...styles.message,
-                      ...(item.speaker === 'contact' ? styles.contactMessage : styles.yourMessage)
-                    }}
-                  >
-                    <strong>{item.speaker === 'contact' ? '🗣️ CONTACT' : '💬 YOU'}</strong>
-                    <div style={{ marginTop: '6px' }}>{item.text}</div>
-                  </div>
-                ))
-              )}
+        ) : (
+          <div style={styles.callPanel}>
+            {/* CONVERSATION */}
+            <div style={styles.conversationBox}>
+              <div style={styles.boxHeader}>📞 Conversation</div>
+              <div style={styles.boxContent}>
+                {conversationHistory.length === 0 ? (
+                  <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>Start listening...</div>
+                ) : (
+                  conversationHistory.map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        ...styles.message,
+                        ...(item.speaker === 'contact' ? styles.contactMessage : styles.yourMessage)
+                      }}
+                    >
+                      <strong>{item.speaker === 'contact' ? '🗣️ CONTACT' : '💬 YOU'}</strong>
+                      <div style={{ marginTop: '6px' }}>{item.text}</div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* SAY NOW */}
-          <div style={styles.sayNowBox}>
-            <div style={styles.sayNowHeader}>✨ SAY NOW</div>
-            <div style={styles.sayNowContent}>
-              {isGenerating ? (
-                <div style={styles.sayNowText}>⏳ Listening...</div>
-              ) : sayNow ? (
-                <div style={styles.sayNowText}>{sayNow.replace(/^SAY NOW:\s*/i, '').trim()}</div>
-              ) : (
-                <div style={{ color: '#64748b', textAlign: 'center' }}>Listen to them</div>
-              )}
-            </div>
-            <div style={styles.buttonRow}>
-              {isListening ? (
-                <button onClick={stopListening} style={{...styles.button, ...styles.buttonWarning}}>
-                  ⏹️ STOP
+            {/* SAY NOW */}
+            <div style={styles.sayNowBox}>
+              <div style={styles.sayNowHeader}>✨ SAY NOW</div>
+              <div style={styles.sayNowContent}>
+                {isGenerating ? (
+                  <div style={styles.sayNowText}>⏳ Listening...</div>
+                ) : sayNow ? (
+                  <div style={styles.sayNowText}>{sayNow.replace(/^SAY NOW:\s*/i, '').trim()}</div>
+                ) : (
+                  <div style={{ color: '#64748b', textAlign: 'center' }}>Listen to them</div>
+                )}
+              </div>
+              <div style={styles.buttonRow}>
+                {isListening ? (
+                  <button onClick={stopListening} style={{...styles.button, ...styles.buttonWarning}}>
+                    ⏹️ STOP
+                  </button>
+                ) : (
+                  <button onClick={startListening} style={{...styles.button, ...styles.buttonDanger}}>
+                    🎤 LISTEN
+                  </button>
+                )}
+                <button onClick={endCall} style={{...styles.button, ...styles.buttonDanger}}>
+                  📞 END CALL
                 </button>
-              ) : (
-                <button onClick={startListening} style={{...styles.button, ...styles.buttonDanger}}>
-                  🎤 LISTEN
-                </button>
-              )}
-              <button onClick={endCall} style={{...styles.button, ...styles.buttonDanger}}>
-                📞 END CALL
-              </button>
+                {conversationHistory.length > 0 && (
+                  <button onClick={saveCall} style={{...styles.button, ...styles.buttonSecondary}}>
+                    💾 SAVE
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
-    );
-  }
-
-  // ════════════════════════════════════════
-  // CALL SUMMARY SCREEN
-  // ════════════════════════════════════════
-  if (screen === 'summary' && callSummary) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <span>✅ CALL SUMMARY</span>
-        </div>
-
-        <div style={{...styles.content, maxWidth: '800px', margin: '0 auto'}}>
-          <div style={{...styles.card, marginBottom: '16px'}}>
-            <div style={{fontSize: '16px', fontWeight: '700', marginBottom: '12px'}}>Call Completed</div>
-            <div style={{fontSize: '13px', color: '#cbd5e1', lineHeight: '1.8'}}>
-              <div><strong>Supplier:</strong> {supplierProfile?.supplier.company_name}</div>
-              <div><strong>Contact:</strong> {supplierProfile?.primary_contact?.name || 'Not specified'}</div>
-              <div><strong>Duration:</strong> {Math.round(callDuration / 60)} minutes</div>
-              <div><strong>Summary:</strong> {callSummary.summary}</div>
-            </div>
-          </div>
-
-          <div style={{...styles.card, marginBottom: '16px'}}>
-            <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px', color: '#10b981'}}>✓ Key Discoveries</div>
-            <div style={{fontSize: '13px', color: '#cbd5e1'}}>
-              {callSummary.key_discoveries?.map((d, idx) => (
-                <div key={idx}>✓ {d}</div>
-              )) || <div>None</div>}
-            </div>
-          </div>
-
-          <div style={{...styles.card, marginBottom: '16px'}}>
-            <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px', color: '#fca5a5'}}>□ Next Steps</div>
-            <div style={{fontSize: '13px', color: '#cbd5e1'}}>
-              {callSummary.next_steps?.map((s, idx) => (
-                <div key={idx}>→ {s}</div>
-              )) || <div>None</div>}
-            </div>
-          </div>
-
-          <div style={{...styles.card, marginBottom: '16px'}}>
-            <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px'}}>📅 Follow Up Date</div>
-            <input
-              type="date"
-              value={followUpDate}
-              onChange={(e) => setFollowUpDate(e.target.value)}
-              style={{width: '100%', padding: '8px', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px'}}
-            />
-          </div>
-
-          <div style={{...styles.card, marginBottom: '16px'}}>
-            <div style={{fontSize: '14px', fontWeight: '700', marginBottom: '12px'}}>Call Outcome</div>
-            <select
-              value={callOutcome}
-              onChange={(e) => setCallOutcome(e.target.value)}
-              style={{width: '100%', padding: '8px', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '4px'}}
-            >
-              <option>No Fit</option>
-              <option>Follow Up</option>
-              <option>Application Sent</option>
-              <option>Waiting Approval</option>
-              <option>Approved</option>
-              <option>Ordering</option>
-            </select>
-          </div>
-
-          <div style={{display: 'flex', gap: '8px'}}>
-            <button
-              onClick={finalizeSummary}
-              style={{...styles.button, ...styles.buttonPrimary, flex: 1}}
-            >
-              ✅ SAVE & CLOSE
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return <div style={styles.container}><div style={styles.header}>Loading...</div></div>;
+    </div>
+  );
 }
