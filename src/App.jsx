@@ -20,8 +20,7 @@ export default function LiveCallUI() {
   const [briefText, setBriefText] = useState('');
   const [callType, setCallType] = useState('distributor_inquiry');
   const [callTypeSelected, setCallTypeSelected] = useState('');
-  const [yourResponse, setYourResponse] = useState('');
-  const [showAddResponse, setShowAddResponse] = useState(false);
+  const [yourInput, setYourInput] = useState('');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -68,7 +67,6 @@ export default function LiveCallUI() {
             timestamp: new Date().toLocaleTimeString()
           }];
           setConversationHistory(updatedHistory);
-          setShowAddResponse(true);
           generateResponse(contactWords, updatedHistory);
         }
       }
@@ -100,19 +98,6 @@ export default function LiveCallUI() {
       console.error('Claude response error:', err);
     } finally {
       setIsGenerating(false);
-    }
-  };
-
-  const addYourResponse = () => {
-    if (yourResponse.trim()) {
-      const updatedHistory = [...conversationHistory, {
-        speaker: 'you',
-        text: yourResponse,
-        timestamp: new Date().toLocaleTimeString()
-      }];
-      setConversationHistory(updatedHistory);
-      setYourResponse('');
-      setShowAddResponse(false);
     }
   };
 
@@ -167,19 +152,16 @@ export default function LiveCallUI() {
   };
 
   const saveCall = () => {
-    const fullTranscript = conversationHistory.map(item => 
+    const transcript = conversationHistory.map(item => 
       `[${item.timestamp}] ${item.speaker === 'contact' ? 'CONTACT' : 'YOU'}: ${item.text}`
     ).join('\n\n');
 
     const fullText = `CALL TYPE: ${CALL_TYPES[callTypeSelected]?.label}
-DURATION: ${formatTime(callDuration)}
 BRIEF: ${briefText}
 
-═══════════════════════════════════════
-FULL TRANSCRIPT
-═══════════════════════════════════════
+---
 
-${fullTranscript}`;
+${transcript}`;
 
     const blob = new Blob([fullText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -290,11 +272,11 @@ ${fullTranscript}`;
     callPanel: {
       flex: 1,
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1fr',
+      gridTemplateColumns: '1fr 1fr',
       gap: '16px',
       overflow: 'hidden'
     },
-    transcriptBox: {
+    conversationBox: {
       background: 'rgba(15, 23, 42, 0.4)',
       border: '1px solid rgba(51, 65, 85, 0.5)',
       borderRadius: '8px',
@@ -369,42 +351,6 @@ ${fullTranscript}`;
       fontWeight: '500',
       textAlign: 'left'
     },
-    responseBox: {
-      background: 'rgba(15, 23, 42, 0.4)',
-      border: '2px solid rgba(16, 185, 129, 0.5)',
-      borderRadius: '8px',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden'
-    },
-    responseHeader: {
-      fontSize: '11px',
-      fontWeight: '700',
-      color: '#10b981',
-      textTransform: 'uppercase',
-      padding: '12px',
-      borderBottom: '1px solid rgba(16, 185, 129, 0.3)',
-      background: 'rgba(15, 23, 42, 0.8)',
-      letterSpacing: '0.5px'
-    },
-    responseContent: {
-      flex: 1,
-      padding: '12px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px'
-    },
-    responseInput: {
-      flex: 1,
-      padding: '12px',
-      background: 'rgba(15, 23, 42, 0.5)',
-      border: '1px solid rgba(16, 185, 129, 0.3)',
-      borderRadius: '6px',
-      color: '#cbd5e1',
-      fontFamily: 'system-ui',
-      fontSize: '13px',
-      resize: 'none'
-    },
     buttonRow: {
       display: 'flex',
       gap: '10px',
@@ -420,10 +366,6 @@ ${fullTranscript}`;
       cursor: 'pointer',
       fontSize: '13px',
       transition: 'all 0.2s'
-    },
-    buttonPrimary: {
-      background: '#10b981',
-      color: '#fff'
     },
     buttonDanger: {
       background: '#ef4444',
@@ -489,9 +431,9 @@ ${fullTranscript}`;
           </div>
         ) : (
           <div style={styles.callPanel}>
-            {/* FULL TRANSCRIPT */}
-            <div style={styles.transcriptBox}>
-              <div style={styles.boxHeader}>📝 Full Transcript</div>
+            {/* CONVERSATION */}
+            <div style={styles.conversationBox}>
+              <div style={styles.boxHeader}>📞 Full Transcript</div>
               <div style={styles.boxContent}>
                 {conversationHistory.length === 0 ? (
                   <div style={{ color: '#64748b', textAlign: 'center', marginTop: '40px' }}>Start listening...</div>
@@ -512,6 +454,35 @@ ${fullTranscript}`;
                     <div ref={transcriptEndRef} />
                   </>
                 )}
+              </div>
+              <div style={{ padding: '12px', borderTop: '1px solid rgba(51, 65, 85, 0.5)' }}>
+                <input
+                  type="text"
+                  value={yourInput}
+                  onChange={(e) => setYourInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && yourInput.trim()) {
+                      setConversationHistory([...conversationHistory, {
+                        speaker: 'you',
+                        text: yourInput,
+                        timestamp: new Date().toLocaleTimeString()
+                      }]);
+                      setYourInput('');
+                    }
+                  }}
+                  placeholder="What did you say? (Press Enter)"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'rgba(15, 23, 42, 0.5)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: '4px',
+                    color: '#cbd5e1',
+                    fontSize: '12px',
+                    fontFamily: 'system-ui',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
             </div>
 
@@ -547,45 +518,6 @@ ${fullTranscript}`;
                 )}
               </div>
             </div>
-
-            {/* ADD YOUR RESPONSE */}
-            {showAddResponse && (
-              <div style={styles.responseBox}>
-                <div style={styles.responseHeader}>💬 Add Your Response</div>
-                <div style={styles.responseContent}>
-                  <textarea
-                    value={yourResponse}
-                    onChange={(e) => setYourResponse(e.target.value)}
-                    placeholder="What did you say? (Type or paste your response)"
-                    style={styles.responseInput}
-                  />
-                  <div style={styles.buttonRow}>
-                    <button
-                      onClick={addYourResponse}
-                      disabled={!yourResponse.trim()}
-                      style={{
-                        ...styles.button,
-                        ...styles.buttonPrimary,
-                        flex: 1,
-                        opacity: yourResponse.trim() ? 1 : 0.5,
-                        cursor: yourResponse.trim() ? 'pointer' : 'not-allowed'
-                      }}
-                    >
-                      ✅ ADD
-                    </button>
-                    <button
-                      onClick={() => {
-                        setYourResponse('');
-                        setShowAddResponse(false);
-                      }}
-                      style={{...styles.button, ...styles.buttonSecondary}}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
