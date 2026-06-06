@@ -170,14 +170,14 @@ ${transcript}`;
     a.click();
   };
 
-  const addMyResponse = () => {
-    const response = prompt('What did you say?');
-    if (response?.trim()) {
+  const addMyAnswer = () => {
+    if (sayNow.trim()) {
       setConversationHistory([...conversationHistory, {
         speaker: 'you',
-        text: response,
+        text: sayNow.replace(/^SAY NOW:\s*/i, '').trim(),
         timestamp: new Date().toLocaleTimeString()
       }]);
+      setSayNow('');
     }
   };
 
@@ -377,10 +377,6 @@ ${transcript}`;
       fontSize: '13px',
       transition: 'all 0.2s'
     },
-    buttonPrimary: {
-      background: '#10b981',
-      color: '#fff'
-    },
     buttonDanger: {
       background: '#ef4444',
       color: '#fff'
@@ -392,6 +388,10 @@ ${transcript}`;
     buttonSecondary: {
       background: '#475569',
       color: '#e2e8f0'
+    },
+    buttonSuccess: {
+      background: '#10b981',
+      color: '#fff'
     }
   };
 
@@ -469,26 +469,6 @@ ${transcript}`;
                   </>
                 )}
               </div>
-              {conversationHistory.length > 0 && (
-                <button
-                  onClick={addMyResponse}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: 'rgba(16, 185, 129, 0.2)',
-                    border: '1px solid rgba(16, 185, 129, 0.5)',
-                    borderRadius: '4px',
-                    color: '#10b981',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    margin: '12px 12px 0 12px',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  ➕ Add My Response
-                </button>
-              )}
             </div>
 
             {/* SAY NOW */}
@@ -522,6 +502,25 @@ ${transcript}`;
                   </button>
                 )}
               </div>
+              {sayNow && (
+                <button
+                  onClick={addMyAnswer}
+                  style={{
+                    width: 'calc(100% - 24px)',
+                    padding: '10px',
+                    margin: '12px',
+                    background: '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontWeight: '600',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✅ Add My Answer
+                </button>
+              )}
             </div>
           </div>
         )}
