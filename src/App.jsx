@@ -20,7 +20,6 @@ export default function LiveCallUI() {
   const [briefText, setBriefText] = useState('');
   const [callType, setCallType] = useState('distributor_inquiry');
   const [callTypeSelected, setCallTypeSelected] = useState('');
-  const [yourInput, setYourInput] = useState('');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -169,6 +168,17 @@ ${transcript}`;
     a.href = url;
     a.download = `Vortex-${callTypeSelected}-${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
+  };
+
+  const addMyResponse = () => {
+    const response = prompt('What did you say?');
+    if (response?.trim()) {
+      setConversationHistory([...conversationHistory, {
+        speaker: 'you',
+        text: response,
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    }
   };
 
   const styles = {
@@ -367,6 +377,10 @@ ${transcript}`;
       fontSize: '13px',
       transition: 'all 0.2s'
     },
+    buttonPrimary: {
+      background: '#10b981',
+      color: '#fff'
+    },
     buttonDanger: {
       background: '#ef4444',
       color: '#fff'
@@ -455,35 +469,26 @@ ${transcript}`;
                   </>
                 )}
               </div>
-              <div style={{ padding: '12px', borderTop: '1px solid rgba(51, 65, 85, 0.5)' }}>
-                <input
-                  type="text"
-                  value={yourInput}
-                  onChange={(e) => setYourInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && yourInput.trim()) {
-                      setConversationHistory([...conversationHistory, {
-                        speaker: 'you',
-                        text: yourInput,
-                        timestamp: new Date().toLocaleTimeString()
-                      }]);
-                      setYourInput('');
-                    }
-                  }}
-                  placeholder="What did you say? (Press Enter)"
+              {conversationHistory.length > 0 && (
+                <button
+                  onClick={addMyResponse}
                   style={{
                     width: '100%',
                     padding: '10px',
-                    background: 'rgba(15, 23, 42, 0.5)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.5)',
                     borderRadius: '4px',
-                    color: '#cbd5e1',
+                    color: '#10b981',
                     fontSize: '12px',
-                    fontFamily: 'system-ui',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    margin: '12px 12px 0 12px',
                     boxSizing: 'border-box'
                   }}
-                />
-              </div>
+                >
+                  ➕ Add My Response
+                </button>
+              )}
             </div>
 
             {/* SAY NOW */}
