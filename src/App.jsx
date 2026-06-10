@@ -375,11 +375,11 @@ ${transcript}`;
   const styles = {
     container: {
       height: '100vh',
-      background: 'linear-gradient(to bottom right, #0f172a, #0f1419)',
+      background: 'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(16,185,129,0.06), transparent), linear-gradient(180deg, #0a0e14 0%, #07090d 100%)',
       color: '#fff',
       display: 'flex',
       flexDirection: 'column',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
+      fontFamily: "'Inter', -apple-system, sans-serif"
     },
     header: {
       display: 'none'
@@ -403,12 +403,14 @@ ${transcript}`;
       overflow: 'auto'
     },
     setupCard: {
-      background: '#0f1419',
-      border: '1px solid #1f2937',
-      borderRadius: '12px',
-      padding: '28px 32px',
+      background: 'linear-gradient(180deg, rgba(22,28,38,0.9), rgba(13,17,23,0.95))',
+      border: '1px solid #232d3b',
+      borderRadius: '16px',
+      padding: '32px 36px',
       maxWidth: '720px',
-      width: '100%'
+      width: '100%',
+      boxShadow: '0 24px 48px -16px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+      backdropFilter: 'blur(8px)'
     },
     setupLabel: {
       fontSize: '11px',
@@ -426,21 +428,22 @@ ${transcript}`;
       marginBottom: '20px'
     },
     typeButton: {
-      padding: '12px 14px',
-      background: '#0b0f14',
-      border: '1px solid #1f2937',
-      borderRadius: '6px',
+      padding: '13px 15px',
+      background: 'rgba(11,15,20,0.8)',
+      border: '1px solid #222c3a',
+      borderRadius: '10px',
       cursor: 'pointer',
-      color: '#cbd5e1',
+      color: '#b6c2cf',
       textAlign: 'left',
       fontSize: '13px',
       fontWeight: 600,
       transition: 'all 0.15s'
     },
     typeButtonActive: {
-      background: 'rgba(16, 185, 129, 0.1)',
-      border: '2px solid #10b981',
-      color: '#10b981'
+      background: 'linear-gradient(180deg, rgba(16,185,129,0.16), rgba(16,185,129,0.08))',
+      border: '1px solid rgba(16,185,129,0.7)',
+      color: '#34d399',
+      boxShadow: '0 0 0 1px rgba(16,185,129,0.25), 0 0 20px rgba(16,185,129,0.12)'
     },
     textarea: {
       width: '100%',
@@ -459,15 +462,16 @@ ${transcript}`;
     },
     startButton: {
       width: '100%',
-      padding: '13px',
-      background: '#10b981',
-      color: '#0b0f14',
+      padding: '15px',
+      background: 'linear-gradient(180deg, #14cc94, #0ea372)',
+      color: '#04110c',
       border: 'none',
-      borderRadius: '8px',
+      borderRadius: '12px',
       fontSize: '14px',
-      fontWeight: 700,
+      fontWeight: 800,
       cursor: 'pointer',
-      letterSpacing: '0.3px',
+      letterSpacing: '0.4px',
+      boxShadow: '0 8px 24px -8px rgba(16,185,129,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
       transition: 'all 0.15s'
     },
     callPanel: {
