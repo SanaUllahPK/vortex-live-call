@@ -1021,38 +1021,43 @@ const sidebarStyles = {
   container: {
     display: 'flex',
     minHeight: '100vh',
-    background: '#0b0f14',
+    background: '#07090d',
     color: '#e2e8f0',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
   sidebar: {
-    width: '220px',
-    background: '#0f1419',
-    borderRight: '1px solid #1f2937',
-    padding: '20px 0',
+    width: '230px',
+    background: 'linear-gradient(180deg, #0d1219 0%, #090d12 100%)',
+    borderRight: '1px solid #1a2230',
+    padding: '24px 0',
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
+    boxShadow: 'inset -1px 0 0 rgba(255,255,255,0.02)',
   },
   logo: {
-    padding: '0 20px 24px 20px',
-    fontSize: '14px',
-    fontWeight: 700,
-    letterSpacing: '0.5px',
-    color: '#10b981',
-    borderBottom: '1px solid #1f2937',
-    marginBottom: '12px',
+    padding: '0 22px 26px 22px',
+    fontSize: '13px',
+    fontWeight: 800,
+    letterSpacing: '2px',
+    color: '#34d399',
+    borderBottom: '1px solid #1a2230',
+    marginBottom: '14px',
+    textShadow: '0 0 24px rgba(16,185,129,0.4)',
   },
   navLink: (isActive) => ({
-    padding: '10px 20px',
-    color: isActive ? '#10b981' : '#94a3b8',
-    background: isActive ? 'rgba(16,185,129,0.08)' : 'transparent',
+    padding: '11px 22px',
+    margin: '1px 10px',
+    color: isActive ? '#34d399' : '#8b9bb0',
+    background: isActive ? 'linear-gradient(90deg, rgba(16,185,129,0.13), rgba(16,185,129,0.04))' : 'transparent',
     borderLeft: isActive ? '2px solid #10b981' : '2px solid transparent',
+    borderRadius: '8px',
     textDecoration: 'none',
-    fontSize: '14px',
-    fontWeight: isActive ? 600 : 500,
+    fontSize: '13.5px',
+    fontWeight: isActive ? 700 : 500,
     cursor: 'pointer',
     display: 'block',
+    transition: 'all 0.15s ease',
   }),
   content: {
     flex: 1,
@@ -1100,10 +1105,11 @@ function DashboardPlaceholder() {
   }, []);
 
   const cardStyle = {
-    background: '#0f1419',
-    border: '1px solid #1f2937',
-    borderRadius: '10px',
-    padding: '18px 20px',
+    background: 'linear-gradient(180deg, rgba(20,26,35,0.85), rgba(12,16,22,0.95))',
+    border: '1px solid #222c3a',
+    borderRadius: '14px',
+    padding: '20px 22px',
+    boxShadow: '0 10px 28px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)',
   };
 
   const kpiCardStyle = {
@@ -1113,8 +1119,8 @@ function DashboardPlaceholder() {
     gap: '6px',
   };
 
-  const kpiLabel = {fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600};
-  const kpiValue = {fontSize: '28px', fontWeight: 700, color: '#e2e8f0'};
+  const kpiLabel = {fontSize: '10.5px', color: '#7d8da1', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700};
+  const kpiValue = {fontSize: '32px', fontWeight: 800, color: '#f1f5f9', letterSpacing: '-0.02em', fontFamily: "'Inter', sans-serif"};
 
   return (
     <div style={{padding: '24px 28px', color: '#e2e8f0', maxWidth: '1400px'}}>
@@ -1386,8 +1392,8 @@ function SuppliersListPage() {
 }
 
 const thStyle = {
-  textAlign: 'left', padding: '14px 18px', fontSize: '11px', fontWeight: 600,
-  color: '#64748b', letterSpacing: '0.5px', textTransform: 'uppercase', cursor: 'pointer',
+  textAlign: 'left', padding: '15px 18px', fontSize: '10.5px', fontWeight: 800,
+  color: '#7d8da1', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer',
 };
 const tdStyle = {
   padding: '14px 18px', fontSize: '14px', color: '#e2e8f0',
