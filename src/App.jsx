@@ -482,22 +482,23 @@ ${transcript}`;
       overflow: 'hidden'
     },
     conversationBox: {
-      background: 'rgba(15, 23, 42, 0.4)',
-      border: '1px solid rgba(51, 65, 85, 0.5)',
-      borderRadius: '8px',
+      background: 'linear-gradient(180deg, rgba(18,23,31,0.85), rgba(11,15,20,0.92))',
+      border: '1px solid #1f2937',
+      borderRadius: '14px',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      boxShadow: '0 12px 32px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03)'
     },
     boxHeader: {
-      fontSize: '11px',
-      fontWeight: '700',
-      color: '#64748b',
+      fontSize: '10.5px',
+      fontWeight: '800',
+      color: '#7d8da1',
       textTransform: 'uppercase',
-      padding: '12px',
-      borderBottom: '1px solid rgba(51, 65, 85, 0.5)',
-      background: 'rgba(15, 23, 42, 0.8)',
-      letterSpacing: '0.5px'
+      padding: '13px 16px',
+      borderBottom: '1px solid #1c2533',
+      background: 'rgba(10,14,19,0.85)',
+      letterSpacing: '1px'
     },
     boxContent: {
       flex: 1,
@@ -508,38 +509,41 @@ ${transcript}`;
       gap: '10px'
     },
     message: {
-      padding: '12px',
-      borderRadius: '6px',
-      fontSize: '12px',
-      lineHeight: '1.5'
+      padding: '12px 14px',
+      borderRadius: '10px',
+      fontSize: '12.5px',
+      lineHeight: '1.55'
     },
     contactMessage: {
-      background: 'rgba(248, 113, 113, 0.1)',
+      background: 'linear-gradient(180deg, rgba(248,113,113,0.10), rgba(248,113,113,0.05))',
+      border: '1px solid rgba(248,113,113,0.22)',
       borderLeft: '3px solid #f87171',
-      color: '#fca5a5'
+      color: '#fda4a4'
     },
     yourMessage: {
-      background: 'rgba(16, 185, 129, 0.1)',
+      background: 'linear-gradient(180deg, rgba(16,185,129,0.10), rgba(16,185,129,0.05))',
+      border: '1px solid rgba(16,185,129,0.22)',
       borderLeft: '3px solid #10b981',
-      color: '#a7f3d0'
+      color: '#9ff0cd'
     },
     sayNowBox: {
-      background: 'rgba(15, 23, 42, 0.4)',
-      border: '2px solid rgba(59, 130, 246, 0.5)',
-      borderRadius: '8px',
+      background: 'linear-gradient(180deg, rgba(13,26,21,0.92), rgba(9,15,13,0.96))',
+      border: '1px solid rgba(16,185,129,0.45)',
+      borderRadius: '14px',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      animation: 'sayNowGlow 2.4s ease-in-out infinite'
     },
     sayNowHeader: {
-      fontSize: '11px',
-      fontWeight: '700',
-      color: '#3b82f6',
+      fontSize: '10.5px',
+      fontWeight: '800',
+      color: '#34d399',
       textTransform: 'uppercase',
-      padding: '12px',
-      borderBottom: '1px solid rgba(59, 130, 246, 0.3)',
-      background: 'rgba(15, 23, 42, 0.8)',
-      letterSpacing: '0.5px'
+      padding: '13px 16px',
+      borderBottom: '1px solid rgba(16,185,129,0.25)',
+      background: 'rgba(8,18,14,0.9)',
+      letterSpacing: '1px'
     },
     sayNowContent: {
       flex: 1,
