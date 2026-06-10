@@ -95,38 +95,25 @@ function CallPage() {
 
   const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
 
-  const sendToDeepgram = async (audioBlob) => {
-    try {
-      const response = await fetch(
-        `https://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&language=en&smart_format=true&filler_words=false`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-            'Content-Type': 'audio/wav'
-          },
-          body: audioBlob
-        }
-      );
+  // ═══ Deepgram WebSocket Streaming — words appear live, SAY NOW fires on utterance end ═══
+  const dgSocketRef = React.useRef(null);
+  const audioCtxRef = React.useRef(null);
+  const processorRef = React.useRef(null);
+  const [interimText, setInterimText] = React.useState('');
+  const historyRef = React.useRef([]);
+  React.useEffect(() => { historyRef.current = conversationHistory; }, [conversationHistory]);
 
-      if (!response.ok) return;
-
-      const result = await response.json();
-      if (result.results?.channels?.[0]?.alternatives?.[0]?.transcript) {
-        const contactWords = result.results.channels[0].alternatives[0].transcript;
-        if (contactWords.trim()) {
-          const updatedHistory = [...conversationHistory, {
-            speaker: 'contact',
-            text: contactWords,
-            timestamp: new Date().toLocaleTimeString()
-          }];
-          setConversationHistory(updatedHistory);
-          generateResponse(contactWords, updatedHistory);
-        }
-      }
-    } catch (err) {
-      console.error('Deepgram request failed:', err);
-    }
+  const handleFinalTranscript = (text) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+    const updatedHistory = [...historyRef.current, {
+      speaker: 'contact',
+      text: trimmed,
+      timestamp: new Date().toLocaleTimeString()
+    }];
+    setConversationHistory(updatedHistory);
+    setInterimText('');
+    generateResponse(trimmed, updatedHistory);
   };
 
   const generateResponse = async (text, history) => {
@@ -159,48 +146,99 @@ function CallPage() {
 
   const startListening = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
+      // Open Deepgram streaming socket — interim results + utterance detection
+      const params = new URLSearchParams({
+        model: 'nova-2',
+        language: 'en',
+        smart_format: 'true',
+        filler_words: 'false',
+        interim_results: 'true',
+        utterance_end_ms: '1600',
+        vad_events: 'true',
+        encoding: 'linear16',
+        sample_rate: '16000',
+        channels: '1',
+      });
+      const socket = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, ['token', DEEPGRAM_API_KEY]);
+      dgSocketRef.current = socket;
+
+      let utteranceBuffer = '';
+
+      socket.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.type === 'Results') {
+            const alt = data.channel?.alternatives?.[0];
+            const transcript = alt?.transcript || '';
+            if (data.is_final) {
+              // Accumulate finalized fragments — do NOT fire on speech_final (too eager)
+              if (transcript.trim()) utteranceBuffer += (utteranceBuffer ? ' ' : '') + transcript.trim();
+              setInterimText(utteranceBuffer);
+            } else {
+              // Interim — show live as they speak (buffer + current partial)
+              setInterimText(utteranceBuffer + (utteranceBuffer && transcript ? ' ' : '') + transcript);
+            }
+          } else if (data.type === 'UtteranceEnd') {
+            // ONLY UtteranceEnd (respects utterance_end_ms) finalizes the utterance
+            if (utteranceBuffer.trim()) {
+              handleFinalTranscript(utteranceBuffer);
+              utteranceBuffer = '';
+            }
+          }
+        } catch (e) { /* ignore parse errors */ }
       };
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        await sendToDeepgram(audioBlob);
-        audioChunksRef.current = [];
-      };
+      socket.onerror = (e) => console.error('Deepgram socket error:', e);
+      socket.onclose = () => console.log('Deepgram socket closed');
 
-      mediaRecorder.start();
-      setIsListening(true);
+      socket.onopen = () => {
+        // Pipe mic → 16kHz PCM → socket
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        audioCtxRef.current = audioCtx;
+        const source = audioCtx.createMediaStreamSource(stream);
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        processorRef.current = processor;
+        processor.onaudioprocess = (e) => {
+          if (socket.readyState !== WebSocket.OPEN) return;
+          const float32 = e.inputBuffer.getChannelData(0);
+          const int16 = new Int16Array(float32.length);
+          for (let i = 0; i < float32.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32[i]));
+            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          socket.send(int16.buffer);
+        };
+        source.connect(processor);
+        processor.connect(audioCtx.destination);
+        setIsListening(true);
+      };
     } catch (err) {
+      console.error('startListening error:', err);
       alert('Please allow microphone access');
     }
   };
 
   const stopListening = () => {
     return new Promise((resolve) => {
-      const mr = mediaRecorderRef.current;
-      if (mr && mr.state === 'recording') {
-        // Wait for onstop to finish (Deepgram processing) before resolving
-        const originalOnstop = mr.onstop;
-        mr.onstop = async (ev) => {
-          if (originalOnstop) await originalOnstop(ev);
-          resolve();
-        };
-        mr.stop();
-      } else {
-        resolve();
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
+      try {
+        if (processorRef.current) { processorRef.current.disconnect(); processorRef.current = null; }
+        if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
+        if (dgSocketRef.current && dgSocketRef.current.readyState === WebSocket.OPEN) {
+          try { dgSocketRef.current.send(JSON.stringify({ type: 'CloseStream' })); } catch (e) {}
+          dgSocketRef.current.close();
+        }
+        dgSocketRef.current = null;
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
+      } catch (e) { console.warn('stopListening cleanup error:', e); }
       setIsListening(false);
+      setInterimText('');
+      resolve();
     });
   };
 
@@ -904,6 +942,12 @@ e.g. "6 sellers on main ASIN. Lowest at $14.99 vs MSRP $19.99. Listing missing b
                         <div style={{ marginTop: '6px' }}>{item.text}</div>
                       </div>
                     ))}
+                    {interimText && (
+                      <div style={{...styles.message, background: 'rgba(148,163,184,0.07)', border: '1px dashed rgba(148,163,184,0.3)', color: '#94a3b8', fontStyle: 'italic'}}>
+                        <strong style={{color: '#7d8da1'}}>🎙️ LIVE</strong>
+                        <div style={{ marginTop: '6px' }}>{interimText}</div>
+                      </div>
+                    )}
                     <div ref={transcriptEndRef} />
                   </>
                 )}
