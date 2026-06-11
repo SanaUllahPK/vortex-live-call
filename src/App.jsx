@@ -1268,6 +1268,7 @@ function Sidebar() {
       <NavLink to="/" end style={({isActive}) => sidebarStyles.navLink(isActive)}>Dashboard</NavLink>
       <NavLink to="/suppliers" style={({isActive}) => sidebarStyles.navLink(isActive)}>Suppliers</NavLink>
       <NavLink to="/call" style={({isActive}) => sidebarStyles.navLink(isActive)}>Live Call</NavLink>
+      <NavLink to="/coach" style={({isActive}) => sidebarStyles.navLink(isActive)}>AI Coach</NavLink>
       <NavLink to="/follow-ups" style={({isActive}) => sidebarStyles.navLink(isActive)}>Follow-Ups</NavLink>
     </nav>
   );
@@ -2297,6 +2298,352 @@ function SupplierProfilePage() {
   );
 }
 
+
+function CoachPage() {
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const [threads, setThreads] = React.useState([]);
+  const [suppliers, setSuppliers] = React.useState([]);
+  const [activeThread, setActiveThread] = React.useState(null);
+  const [messages, setMessages] = React.useState([]);
+  const [input, setInput] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [showNew, setShowNew] = React.useState(false);
+  const [newThread, setNewThread] = React.useState({ thread_name: '', supplier_id: '', mode: 'strategy' });
+  const [supplierPanel, setSupplierPanel] = React.useState(null);
+  const chatEndRef = React.useRef(null);
+
+  // ═══ LIVE MODE: mic → Deepgram WS → auto-send on utterance end → streamed reply ═══
+  const [liveMode, setLiveMode] = React.useState(false);
+  const [coachInterim, setCoachInterim] = React.useState('');
+  const coachDgRef = React.useRef(null);
+  const coachAudioCtxRef = React.useRef(null);
+  const coachProcessorRef = React.useRef(null);
+  const coachStreamRef = React.useRef(null);
+  const activeThreadRef = React.useRef(null);
+  React.useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
+
+  const sendLive = async (text) => {
+    const thread = activeThreadRef.current;
+    if (!thread || !text.trim()) return;
+    setMessages(prev => [...prev, { role: 'user', content: text, id: 'live-u-' + Date.now() }]);
+    setSending(true);
+    const liveId = 'live-a-' + Date.now();
+    setMessages(prev => [...prev, { role: 'assistant', content: '', id: liveId, streaming: true }]);
+    try {
+      const r = await fetch(`${apiUrl}/api/coach/threads/${thread.id}/messages`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ content: text, stream: true, live: true }),
+      });
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let acc = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop();
+        for (const evt of events) {
+          const line = evt.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          try {
+            const p = JSON.parse(line.slice(6));
+            if (p.t) {
+              acc += p.t;
+              setMessages(prev => prev.map(m => m.id === liveId ? {...m, content: acc} : m));
+            } else if (p.final) {
+              setMessages(prev => prev.map(m => m.id === liveId ? {...m, content: p.final.reply, streaming: false} : m));
+            }
+          } catch (e) { /* skip */ }
+        }
+      }
+    } catch (e) {
+      setMessages(prev => prev.map(m => m.id === liveId ? {...m, content: '⚠ ' + e.message, streaming: false} : m));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const startCoachMic = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      coachStreamRef.current = stream;
+      // Create audio context FIRST and use its REAL sample rate (browsers may ignore requested rate)
+      const audioCtxPre = new (window.AudioContext || window.webkitAudioContext)();
+      const realRate = audioCtxPre.sampleRate;
+      coachAudioCtxRef.current = audioCtxPre;
+      const params = new URLSearchParams({
+        model: 'nova-2', language: 'en', smart_format: 'true', filler_words: 'false',
+        interim_results: 'true', utterance_end_ms: '2000', vad_events: 'true',
+        encoding: 'linear16', sample_rate: String(realRate), channels: '1',
+      });
+      const socket = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, ['token', DEEPGRAM_API_KEY]);
+      coachDgRef.current = socket;
+      let buffer = '';
+      socket.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          if (data.type === 'Results') {
+            const t = data.channel?.alternatives?.[0]?.transcript || '';
+            if (data.is_final) {
+              if (t.trim()) buffer += (buffer ? ' ' : '') + t.trim();
+              setCoachInterim(buffer);
+            } else {
+              setCoachInterim(buffer + (buffer && t ? ' ' : '') + t);
+            }
+          } else if (data.type === 'UtteranceEnd') {
+            if (buffer.trim()) { sendLive(buffer); buffer = ''; setCoachInterim(''); }
+          }
+        } catch (e) { /* ignore */ }
+      };
+      socket.onopen = () => {
+        const audioCtx = coachAudioCtxRef.current;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        coachProcessorRef.current = processor;
+        processor.onaudioprocess = (e) => {
+          if (socket.readyState !== WebSocket.OPEN) return;
+          const f32 = e.inputBuffer.getChannelData(0);
+          const i16 = new Int16Array(f32.length);
+          for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i])); i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; }
+          socket.send(i16.buffer);
+        };
+        // Mute the monitoring path: processor must connect to destination to run, but through zero gain
+        const mute = audioCtx.createGain();
+        mute.gain.value = 0;
+        source.connect(processor);
+        processor.connect(mute);
+        mute.connect(audioCtx.destination);
+        setLiveMode(true);
+      };
+      socket.onerror = () => stopCoachMic();
+    } catch (e) { alert('Microphone access needed for live mode'); }
+  };
+
+  const stopCoachMic = () => {
+    try {
+      if (coachProcessorRef.current) { coachProcessorRef.current.disconnect(); coachProcessorRef.current = null; }
+      if (coachAudioCtxRef.current) { coachAudioCtxRef.current.close().catch(() => {}); coachAudioCtxRef.current = null; }
+      if (coachDgRef.current && coachDgRef.current.readyState === WebSocket.OPEN) {
+        try { coachDgRef.current.send(JSON.stringify({ type: 'CloseStream' })); } catch (e) {}
+        coachDgRef.current.close();
+      }
+      coachDgRef.current = null;
+      if (coachStreamRef.current) { coachStreamRef.current.getTracks().forEach(t => t.stop()); coachStreamRef.current = null; }
+    } catch (e) { /* silent */ }
+    setLiveMode(false);
+    setCoachInterim('');
+  };
+
+  React.useEffect(() => () => stopCoachMic(), []);
+
+  const loadThreads = React.useCallback(() => {
+    fetch(`${apiUrl}/api/coach/threads`).then(r => r.json()).then(d => setThreads(d.threads || [])).catch(() => {});
+  }, [apiUrl]);
+
+  React.useEffect(() => {
+    loadThreads();
+    fetch(`${apiUrl}/api/suppliers`).then(r => r.json()).then(d => setSuppliers(d.suppliers || [])).catch(() => {});
+  }, [loadThreads, apiUrl]);
+
+  React.useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending]);
+
+  const openThread = async (t) => {
+    setActiveThread(t);
+    setMessages([]);
+    setSupplierPanel(null);
+    const r = await fetch(`${apiUrl}/api/coach/threads/${t.id}/messages`);
+    const d = await r.json();
+    setMessages(d.messages || []);
+    if (t.supplier_id) {
+      try {
+        const sr = await fetch(`${apiUrl}/api/suppliers/${t.supplier_id}`);
+        const sd = await sr.json();
+        setSupplierPanel(sd.supplier || null);
+      } catch (e) { /* silent */ }
+    }
+  };
+
+  const createThread = async () => {
+    if (!newThread.thread_name.trim()) return;
+    const r = await fetch(`${apiUrl}/api/coach/threads`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        thread_name: newThread.thread_name,
+        supplier_id: newThread.supplier_id || null,
+        mode: newThread.mode,
+      }),
+    });
+    const d = await r.json();
+    if (d.thread) {
+      setShowNew(false);
+      setNewThread({ thread_name: '', supplier_id: '', mode: 'strategy' });
+      loadThreads();
+      openThread(d.thread);
+    }
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || !activeThread || sending) return;
+    setInput('');
+    setSending(true);
+    setMessages(prev => [...prev, { role: 'user', content: text, id: 'tmp-' + Date.now() }]);
+    try {
+      const r = await fetch(`${apiUrl}/api/coach/threads/${activeThread.id}/messages`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ content: text }),
+      });
+      const d = await r.json();
+      if (d.reply) setMessages(prev => [...prev, { role: 'assistant', content: d.reply, id: 'tmp-a-' + Date.now() }]);
+      else setMessages(prev => [...prev, { role: 'assistant', content: '⚠ ' + (d.error || 'No reply'), id: 'tmp-e-' + Date.now() }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠ Request failed: ' + e.message, id: 'tmp-x-' + Date.now() }]);
+    } finally {
+      setSending(false);
+      loadThreads();
+    }
+  };
+
+  const renderContent = (text) => {
+    const lines = String(text).split('\n');
+    return lines.map((line, i) => {
+      const fieldMatch = line.match(/^\*?\*?(Supplier Intent|Risk Level|Recommended Response|Avoid Saying|Reasoning|Next Objective):?\*?\*?:?\s*(.*)/);
+      if (fieldMatch) {
+        return <div key={i} style={{marginTop: i ? '10px' : 0}}>
+          <span style={{color: '#34d399', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px'}}>{fieldMatch[1]}</span>
+          {fieldMatch[2] && <span style={{color: '#e2e8f0'}}> {fieldMatch[2].replace(/\*\*/g, '')}</span>}
+        </div>;
+      }
+      return <div key={i} style={{minHeight: line.trim() ? 'auto' : '8px'}}>{line.replace(/\*\*/g, '')}</div>;
+    });
+  };
+
+  const MODES = ['strategy', 'email', 'whatsapp', 'negotiation', 'live_call'];
+  const coachInputStyle = {width: '100%', padding: '9px 11px', background: '#0b0f14', border: '1px solid #1f2937', borderRadius: '6px', color: '#e2e8f0', fontSize: '13px', boxSizing: 'border-box', outline: 'none'};
+
+  return (
+    <div style={{display: 'flex', height: '100vh', color: '#e2e8f0'}}>
+      <div style={{width: '250px', borderRight: '1px solid #1a2230', display: 'flex', flexDirection: 'column', background: '#0c1117', flexShrink: 0}}>
+        <div style={{padding: '16px', borderBottom: '1px solid #1a2230'}}>
+          <button onClick={() => setShowNew(!showNew)} style={{width: '100%', padding: '10px', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer'}}>+ New Thread</button>
+        </div>
+        {showNew && (
+          <div style={{padding: '14px', borderBottom: '1px solid #1a2230', display: 'flex', flexDirection: 'column', gap: '8px'}}>
+            <input placeholder="Thread name" value={newThread.thread_name} onChange={e => setNewThread({...newThread, thread_name: e.target.value})} style={coachInputStyle} />
+            <select value={newThread.supplier_id} onChange={e => setNewThread({...newThread, supplier_id: e.target.value})} style={coachInputStyle}>
+              <option value="">No supplier (general)</option>
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
+            </select>
+            <select value={newThread.mode} onChange={e => setNewThread({...newThread, mode: e.target.value})} style={coachInputStyle}>
+              {MODES.map(m => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
+            </select>
+            <button onClick={createThread} style={{padding: '8px', background: '#10b981', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 600, fontSize: '12px', cursor: 'pointer'}}>Create</button>
+          </div>
+        )}
+        <div style={{flex: 1, overflowY: 'auto'}}>
+          {threads.map(t => (
+            <div key={t.id} onClick={() => openThread(t)} style={{
+              padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #131a24',
+              background: activeThread?.id === t.id ? 'rgba(16,185,129,0.08)' : 'transparent',
+              borderLeft: activeThread?.id === t.id ? '2px solid #10b981' : '2px solid transparent',
+            }}>
+              <div style={{fontSize: '13px', fontWeight: 600, color: activeThread?.id === t.id ? '#34d399' : '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{t.thread_name}</div>
+              <div style={{fontSize: '10.5px', color: '#64748b', marginTop: '2px'}}>
+                {t.supplier_memory?.company_name || 'General'} · {t.mode.replace('_', ' ')}
+              </div>
+            </div>
+          ))}
+          {threads.length === 0 && <div style={{padding: '20px', color: '#64748b', fontSize: '12px', textAlign: 'center'}}>No threads yet</div>}
+        </div>
+      </div>
+
+      <div style={{flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0}}>
+        {!activeThread ? (
+          <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '10px'}}>
+            <div style={{fontSize: '28px'}}>🧠</div>
+            <div style={{fontSize: '16px', fontWeight: 700, color: '#94a3b8'}}>Vortex AI Coach</div>
+            <div style={{fontSize: '13px', color: '#64748b'}}>Select a thread or create one to start</div>
+          </div>
+        ) : (<>
+          <div style={{padding: '14px 20px', borderBottom: '1px solid #1a2230', display: 'flex', alignItems: 'center', gap: '10px'}}>
+            <span style={{fontWeight: 700, fontSize: '14px'}}>{activeThread.thread_name}</span>
+            <span style={{fontSize: '11px', color: '#64748b'}}>{activeThread.supplier_memory?.company_name || 'General'} · {activeThread.mode.replace('_', ' ')}</span>
+            <button onClick={() => liveMode ? stopCoachMic() : startCoachMic()} style={{
+              marginLeft: 'auto', padding: '8px 18px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '12px',
+              background: liveMode ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #10b981, #059669)',
+              color: '#fff',
+              boxShadow: liveMode ? '0 0 16px rgba(239,68,68,0.4)' : 'none',
+              animation: liveMode ? 'sayNowGlow 2s ease-in-out infinite' : 'none',
+            }}>
+              {liveMode ? '⏹ END LIVE' : '🎤 GO LIVE'}
+            </button>
+          </div>
+          <div style={{flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px'}}>
+            {messages.map((m, i) => (
+              <div key={m.id || i} style={{
+                maxWidth: '78%', alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                background: m.role === 'user' ? 'rgba(16,185,129,0.12)' : '#0f1419',
+                border: `1px solid ${m.role === 'user' ? 'rgba(16,185,129,0.3)' : '#1f2937'}`,
+                borderRadius: '12px', padding: '12px 16px', fontSize: '13.5px', lineHeight: 1.55,
+              }}>
+                {renderContent(m.content)}
+              </div>
+            ))}
+            {coachInterim && (
+              <div style={{maxWidth: '78%', alignSelf: 'flex-end', background: 'rgba(148,163,184,0.07)', border: '1px dashed rgba(148,163,184,0.3)', borderRadius: '12px', padding: '12px 16px', fontSize: '13.5px', color: '#94a3b8', fontStyle: 'italic'}}>
+                🎙️ {coachInterim}
+              </div>
+            )}
+            {sending && !messages.some(m => m.streaming) && <div style={{alignSelf: 'flex-start', color: '#64748b', fontSize: '13px', padding: '8px 16px'}}>🧠 Coach is thinking...</div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div style={{padding: '14px 20px', borderTop: '1px solid #1a2230', display: 'flex', gap: '10px'}}>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder="Ask the coach, or paste a supplier email/message..."
+              rows={2}
+              style={{...coachInputStyle, resize: 'none', flex: 1, fontFamily: 'inherit'}}
+            />
+            <button onClick={send} disabled={sending} style={{padding: '0 22px', background: sending ? '#1f2937' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: sending ? 'default' : 'pointer'}}>Send</button>
+          </div>
+        </>)}
+      </div>
+
+      {supplierPanel && (
+        <div style={{width: '260px', borderLeft: '1px solid #1a2230', background: '#0c1117', overflowY: 'auto', padding: '16px', flexShrink: 0}}>
+          <div style={{fontSize: '14px', fontWeight: 700, marginBottom: '12px'}}>{supplierPanel.company_name}</div>
+          {[['Stage', supplierPanel.relationship_stage], ['Trust', supplierPanel.trust_score], ['Calls', supplierPanel.total_calls_count], ['Workflow', supplierPanel.primary_workflow]].map(([l, v]) => (
+            <div key={l} style={{display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '6px'}}>
+              <span style={{color: '#64748b'}}>{l}</span><span style={{color: '#e2e8f0', fontWeight: 600}}>{v ?? '—'}</span>
+            </div>
+          ))}
+          {supplierPanel.relationship_summary && (<>
+            <div style={{fontSize: '10px', fontWeight: 800, color: '#7d8da1', textTransform: 'uppercase', letterSpacing: '1px', margin: '14px 0 6px'}}>Summary</div>
+            <div style={{fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5}}>{supplierPanel.relationship_summary}</div>
+          </>)}
+          {supplierPanel.qn_topic_states && Object.keys(supplierPanel.qn_topic_states).length > 0 && (<>
+            <div style={{fontSize: '10px', fontWeight: 800, color: '#7d8da1', textTransform: 'uppercase', letterSpacing: '1px', margin: '14px 0 6px'}}>Known Intelligence</div>
+            {Object.entries(supplierPanel.qn_topic_states).filter(([,v]) => v.state === 'complete').map(([k, v]) => (
+              <div key={k} style={{fontSize: '11px', marginBottom: '4px'}}>
+                <span style={{color: '#34d399'}}>✓ {k.replace(/_/g, ' ')}</span>
+                {v.value && <span style={{color: '#64748b'}}> = {String(v.value).slice(0, 40)}</span>}
+              </div>
+            ))}
+          </>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AddSupplierPage() {
   const [newSupplier, setNewSupplier] = React.useState({
     company_name: '',
@@ -2483,6 +2830,7 @@ export default function AppShell() {
           <Route path="/suppliers/:id" element={<SupplierProfilePage />} />
           <Route path="/add-supplier" element={<AddSupplierPage />} />
           <Route path="/call" element={<CallPage />} />
+          <Route path="/coach" element={<CoachPage />} />
           <Route path="/follow-ups" element={<FollowUpsPlaceholder />} />
         </Routes>
       </div>
