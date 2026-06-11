@@ -1787,6 +1787,7 @@ function SupplierProfilePage() {
           company_name: sup.supplier.company_name || '',
           website: sup.supplier.website || '',
           supplier_category: sup.supplier.supplier_category || '',
+          primary_workflow: sup.supplier.primary_workflow || 'distributor_inquiry',
           relationship_stage: sup.supplier.relationship_stage || 'Prospect',
           relationship_summary: sup.supplier.relationship_summary || '',
           contact_name: sup.supplier.contact_name || '',
