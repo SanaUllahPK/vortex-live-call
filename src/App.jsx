@@ -128,14 +128,78 @@ function CallPage() {
           conversationHistory: history,
           companyName: companyName || briefText,
           callType: callTypeSelected,
-          brief: briefText
+          brief: briefText,
+          stream: true
         })
       });
-      
-      if (response.ok) {
+
+      if (!response.ok) { setIsGenerating(false); return; }
+
+      const ct = response.headers.get('content-type') || '';
+      if (!ct.includes('text/event-stream')) {
+        // Backend didn't stream (fallback) — old JSON path
         const data = await response.json();
         setSayNow((typeof data.suggested_response === 'object' ? data.suggested_response?.text : data.suggested_response) || data.combined_recommendation?.suggested_discovery_question || '');
         setIntelligenceData(data);
+        setIsGenerating(false);
+        return;
+      }
+
+      // ═══ SSE streaming: paint suggestion as Claude generates ═══
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuf = '';
+      let rawAccum = '';          // full raw model output (JSON-ish)
+      let painting = false;        // true once we've located "suggestion":"
+      let suggestionSoFar = '';
+
+      const tryPaint = () => {
+        if (!painting) {
+          const m = rawAccum.match(/"suggestion"\s*:\s*"/);
+          if (m) {
+            painting = true;
+            suggestionSoFar = rawAccum.slice(m.index + m[0].length);
+          }
+        } else {
+          // already painting; rawAccum grew — recompute slice
+          const m = rawAccum.match(/"suggestion"\s*:\s*"/);
+          if (m) suggestionSoFar = rawAccum.slice(m.index + m[0].length);
+        }
+        if (painting) {
+          // stop at closing quote if present
+          const endIdx = suggestionSoFar.search(/(?<!\\)"/);
+          const visible = endIdx >= 0 ? suggestionSoFar.slice(0, endIdx) : suggestionSoFar;
+          // unescape JSON string escapes for display
+          const display = visible.replace(/\\n/g, ' ').replace(/\\"/g, '"');
+          if (display.trim()) {
+            setSayNow(display);
+            setIsGenerating(false);  // first words visible — stop the spinner
+          }
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuf += decoder.decode(value, { stream: true });
+        const events = sseBuf.split('\n\n');
+        sseBuf = events.pop(); // keep incomplete tail
+        for (const evt of events) {
+          const line = evt.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.t) {
+              rawAccum += payload.t;
+              tryPaint();
+            } else if (payload.final) {
+              const data = payload.final;
+              const finalText = (typeof data.suggested_response === 'object' ? data.suggested_response?.text : data.suggested_response) || data.combined_recommendation?.suggested_discovery_question || '';
+              if (finalText) setSayNow(finalText);
+              setIntelligenceData(data);
+            }
+          } catch (e) { /* skip malformed event */ }
+        }
       }
     } catch (err) {
       console.error('Claude response error:', err);
@@ -1006,7 +1070,94 @@ e.g. "6 sellers on main ASIN. Lowest at $14.99 vs MSRP $19.99. Listing missing b
               )}
             </div>
               <div style={{minWidth: 0, background: '#0f1419', border: '1px solid #1f2937', borderRadius: '12px', padding: '20px', overflowY: 'auto', height: '100%'}}>
-                {intelligenceData && (<>
+                {intelligenceData?.qn_state ? (() => {
+                  const qs = intelligenceData.qn_state;
+                  const secTitle = { fontSize: '9.5px', fontWeight: 800, color: '#7d8da1', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px', marginTop: '14px' };
+                  const card = { background: 'rgba(11,15,20,0.6)', border: '1px solid #1c2533', borderRadius: '10px', padding: '10px 12px', marginBottom: '4px' };
+                  return (<>
+                    {/* 1. CURRENT STAGE */}
+                    <div style={{...secTitle, marginTop: 0}}>Current Stage</div>
+                    <div style={{...card, fontSize: '14px', fontWeight: 700, color: '#e2e8f0'}}>{qs.stage_label}</div>
+
+                    {/* 2. DISCOVERY SCORE */}
+                    <div style={secTitle}>{qs.discovery_score.complete ? 'Discovery Complete ✓' : 'Discovery Score'}</div>
+                    <div style={card}>
+                      {[['Amazon Owner','amazon_owner'],['Observation Validated','observation_validated'],['Satisfaction','satisfaction'],['Primary Challenge','primary_challenge']].map(([lbl,k]) => (
+                        <div key={k} style={{fontSize: '11.5px', color: qs.discovery_score[k] ? '#34d399' : '#64748b', marginBottom: '3px'}}>
+                          {qs.discovery_score[k] ? '✓' : '□'} {lbl}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 3. NEXT BEST MOVE */}
+                    <div style={secTitle}>Next Best Move</div>
+                    <div style={{
+                      background: 'linear-gradient(180deg, rgba(16,185,129,0.16), rgba(16,185,129,0.07))',
+                      border: '1px solid rgba(16,185,129,0.55)', borderRadius: '10px',
+                      padding: '12px', fontSize: '14px', fontWeight: 800, color: '#34d399',
+                      boxShadow: '0 0 16px rgba(16,185,129,0.1)', marginBottom: '4px',
+                    }}>{qs.next_best_move}</div>
+
+                    {/* 4. LOCKED INTELLIGENCE */}
+                    {qs.locked.length > 0 && (<>
+                      <div style={secTitle}>Locked Intelligence</div>
+                      <div style={card}>
+                        {qs.locked.map((l, i) => (
+                          <div key={i} style={{fontSize: '11px', marginBottom: '4px'}}>
+                            <span style={{color: '#34d399'}}>✓ {l.label}</span>
+                            <span style={{color: '#94a3b8'}}> = {l.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>)}
+
+                    {/* 5. OPEN INTELLIGENCE */}
+                    {qs.open.length > 0 && (<>
+                      <div style={secTitle}>Open Intelligence</div>
+                      <div style={card}>
+                        {qs.open.map((o, i) => (
+                          <div key={i} style={{fontSize: '11.5px', color: '#94a3b8', marginBottom: '3px'}}>□ {o}</div>
+                        ))}
+                      </div>
+                    </>)}
+
+                    {/* 6. PARTNERSHIP SIGNAL */}
+                    <div style={secTitle}>Partnership Signal</div>
+                    <div style={card}>
+                      <div style={{fontSize: '19px', fontWeight: 800, color: qs.partnership_signal.score >= 6.5 ? '#34d399' : qs.partnership_signal.score >= 4 ? '#fbbf24' : '#f87171', marginBottom: '6px'}}>
+                        {qs.partnership_signal.score} / 10
+                      </div>
+                      {qs.partnership_signal.positive.map((p, i) => (
+                        <div key={'p'+i} style={{fontSize: '10.5px', color: '#34d399', marginBottom: '2px'}}>✓ {p}</div>
+                      ))}
+                      {qs.partnership_signal.negative.map((n, i) => (
+                        <div key={'n'+i} style={{fontSize: '10.5px', color: '#f87171', marginBottom: '2px'}}>• {n}</div>
+                      ))}
+                    </div>
+
+                    {/* 7. RISK & COACHING */}
+                    {qs.risk_coaching.risk && (<>
+                      <div style={secTitle}>Risk</div>
+                      <div style={{...card, border: '1px solid rgba(248,113,113,0.4)'}}>
+                        <div style={{fontSize: '12.5px', fontWeight: 700, color: '#f87171', marginBottom: '6px'}}>{qs.risk_coaching.risk}</div>
+                        {qs.risk_coaching.coaching.map((c, i) => (
+                          <div key={i} style={{fontSize: '10.5px', color: '#cbd5e1', marginBottom: '2px'}}>• {c}</div>
+                        ))}
+                      </div>
+                    </>)}
+
+                    {/* 8. CALL COACH */}
+                    <div style={secTitle}>Call Coach</div>
+                    <div style={card}>
+                      {qs.call_coach.do.map((d, i) => (
+                        <div key={'d'+i} style={{fontSize: '11px', color: '#34d399', marginBottom: '3px'}}>✓ {d}</div>
+                      ))}
+                      {qs.call_coach.avoid.map((a, i) => (
+                        <div key={'a'+i} style={{fontSize: '11px', color: '#f87171', marginBottom: '3px'}}>✗ {a}</div>
+                      ))}
+                    </div>
+                  </>);
+                })() : intelligenceData && (<>
                   <div style={{fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '14px', fontWeight: 600}}>Intelligence</div>
 
                   <div style={{marginBottom: '16px'}}>
